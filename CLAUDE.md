@@ -86,6 +86,28 @@ The mock models exactly the two Directus surfaces we depend on: the
 `company_colors` read *in*, and the enriched attributes (HSL structures) written
 *out*. Keep `core/` free of external dependencies; all I/O goes through `ports/`.
 
+### Mocking the database (concrete)
+
+We never touch Directus or the Search API during development. Instead:
+
+- **Input — `company_colors`**: `fixtures/company_colors.json`, an array of
+  records mirroring the real Directus collection's fields (e.g. `id, name,
+  company, image_url, hex, finish, material, …` — to be confirmed from a real
+  export). Read via `adapters/mock/MockColorRepository` (implements the
+  `ColorRepository` port).
+- **Output — enriched attributes (the HSL structures)**:
+  `MockColorRepository.save_enrichment(id, attrs)` writes to a local file
+  (`out/enriched.json`) or SQLite — standing in for writing back to Directus.
+- **Search index (Search API + pgvector)**: `adapters/mock/MockSearchIndex`
+  holds `(id, embedding, attrs)` in memory (or SQLite) and answers `query(text)`
+  by embedding the query and computing cosine similarity in Python. Vectors are
+  **1536-dim** to match real `search_api` at integration time.
+- **Embeddings**: a pluggable `Embedder` port — `OpenRouterEmbedder` (real
+  `text-embedding-3-small`) or `FakeEmbedder` (deterministic, offline, zero keys).
+
+Because each sits behind a port, **integration = writing `adapters/directus/*`
+and `adapters/search_api/*` against the same interfaces, with `core/` unchanged.**
+
 ## 6. The classifier (core) design
 
 Agentic, multi-stage — matching the pattern the team uses elsewhere:
@@ -186,19 +208,72 @@ All under `~/developer/acelab/`:
   repo — ignore it.
 - Perceptual LAB color matching — deferred to a possible v2.
 
-## 13. Status & phased plan
+## 13. Implementation walkthrough (step by step)
 
-**Status:** planning. A classifier spike already exists at
+**Status:** planning. A classifier spike exists at
 `acelab-hatchet-workers/experiments/color_classification/` and will be **moved
 into `core/`** here. No code in this repo yet.
 
-- **Phase 0 — scaffold**: repo skeleton (`core/`, `ports/`, `adapters/mock`,
-  `fixtures/`, `cli/`), move the spike into `core/`, add `pyproject.toml`.
-- **Phase 1 — classifier on mock data**: run `classify → check → vet` over the
-  `company_colors` fixture (name-only + image paths). Validate, tune prompts.
-- **Phase 2 — search half (optional first cut)**: embed enriched attrs into a
-  mock `SearchIndex`, support text-query → colors.
-- **Phase 3 — tests + eval**: accuracy harness on the simple-product subset where
-  ground truth exists; confidence-gating behavior.
-- **Phase 4 — integration**: Directus adapter, Search API colors object, Hatchet
-  port. (Blocked on the open questions in §11.)
+Ownership tags: **[You]** = human contributor, **[Claude]** = agent.
+
+### Phase 0 — Ground & scaffold
+1. **[You] Pull grounding inputs from Directus.** Export ~10–30 representative
+   `company_colors` rows (or list the field names + paste a few examples).
+   Confirm which signals exist per row: a **swatch image URL**? a **hex**? a
+   company name? finish/material/description? Make `GOOGLE_GENAI_API_KEY`
+   available (and `OPENROUTER_API_KEY` if we use real embeddings).
+   *This grounds the mock schema in reality and lets the classifier actually run.*
+2. **[Claude] Scaffold the repo** — `pyproject.toml` + skeleton (`core/`,
+   `ports/`, `adapters/mock/`, `fixtures/`, `cli/`, `tests/`); move the spike
+   into `core/`.
+3. **[Claude] Define the ports** — `ColorRepository`, `SearchIndex`, `Embedder`.
+4. **[Claude] Build the mock** — `fixtures/company_colors.json` from your sample
+   + `MockColorRepository` over it.
+
+### Phase 1 — Classifier on mock data
+5. **[Claude] Wire `cli/run.py`** — load colors via the repo → run
+   `classify → check → vet` → write enriched attrs back via the repo.
+6. **[You + Claude] Run it** on the fixture with your key; review outputs together.
+7. **[Claude] Tune** prompts/schema from results; verify confidence gating routes
+   hard/low-confidence cases to `needs_review`.
+
+### Phase 2 — Search half (optional first cut)
+8. **[Claude]** Add `Embedder` (OpenRouter real or fake) + `MockSearchIndex`;
+   index the enriched colors.
+9. **[Claude]** Add a `cli` search command: text query → top-N colors.
+10. **[You + Claude]** Sanity-check descriptive queries ("warm terracotta")
+    against the enriched set.
+
+### Phase 3 — Tests & eval
+11. **[Claude]** Unit tests (mocked LLM) for stages/pipeline/adapters; a small
+    accuracy eval on the simple-product subset where ground truth exists.
+
+### Phase 4 — Integration (blocked on §11 open questions)
+12. **[You]** Resolve ownership: Directus write-back target; who extends the
+    Search API for a colors object; production keys/secrets.
+13. **[Claude]** Implement `adapters/directus/*` + `adapters/search_api/*`
+    against the same ports; port `core` orchestration to a Hatchet workflow in
+    `acelab-hatchet-workers`.
+
+## 14. Parallel workstreams (who can work on what)
+
+The ports/adapters design exists precisely so multiple people work at once.
+**One prerequisite: lock the contracts first** — the three port signatures
+(`ColorRepository`, `SearchIndex`, `Embedder`) and the `ColorClassification`
+output schema. They're small; agree them in one sitting. After that, these run
+in parallel:
+
+| Stream | Scope | Depends only on | Can start |
+|---|---|---|---|
+| **A. Classifier core** | `classify → check → vet`, prompts, Gemini | core models | after contracts |
+| **B. Mock data layer** | fixtures, `MockColorRepository`, store | `ColorRepository` port | after contracts (fabricated fixture if no real export yet) |
+| **C. Search half** | `Embedder`, `MockSearchIndex`, query | `SearchIndex` port + `ColorClassification` schema | after contracts (use synthetic enriched records) |
+| **D. Eval / tests** | accuracy harness, unit tests w/ mocked LLM | models + ports | after contracts |
+| **E. Directus adapter** (integration) | real read/write | `ColorRepository` port + Directus access | parallel, anytime |
+| **F. Search API colors object** (integration) | register colors object + adapter | external Search API codebase | parallel, separate owner/repo |
+
+**Critical path:** contracts → (A, B, C, D in parallel) → integrate (E, F).
+The classifier (A) and search (C) only ever meet through the
+`ColorClassification` schema and the `SearchIndex` port — neither needs the
+other's internals. **Main risk to parallelism is schema churn:** if
+`ColorClassification` changes, C/D/E shift — so stabilize it early.
