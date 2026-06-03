@@ -17,7 +17,14 @@ name = "color-classification"
 version = "0.0.0"
 description = "Standalone color enrichment (swatch name + image -> color buckets) + bucket-search demo, against a mocked data layer."
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+    "pillow>=12.2.0",
+    "scikit-image>=0.26.0",
+    "scikit-learn>=1.9.0",
+]
 
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=9.0.3",
+]

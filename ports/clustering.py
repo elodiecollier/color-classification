@@ -2,20 +2,52 @@
 
 core/image_pipeline.py orchestrates the steps but never names a concrete
 algorithm — it calls this interface. That keeps the heavy CV deps
-(numpy / scikit-learn / hdbscan) OUT of core/ and lets us A/B the two
-candidate strategies against real swatches without touching the pipeline.
+(numpy / scikit-learn) OUT of core/ and lets us A/B strategies against
+real swatches without touching the pipeline.
 
-Will define:
-  - ClusterResult: per-cluster LAB centroid + coverage % (pre-filter; the
-    relevance filter in image_pipeline.py runs on top of this).
-  - ClusteringStrategy (interface):
-      cluster(lab_pixels) -> list[ClusterResult]
+Dependency note: numpy IS allowed here (unlike in core/) — a pixel array
+is the only sane interchange format between the pipeline and a strategy.
 
-Implementations (adapters/clustering/):
-  - KMeansSweep: K-means with k swept over the config range (1..6),
-    selected by silhouette score.
-  - HDBSCANStrategy: density-based alternative; no k to pick.
-
-The acid test for any implementation + the downstream filter: a black/white
-checkerboard must come out as TWO clusters (black + white), never one grey.
+The acid test for any implementation: a black/white checkerboard must come
+out as TWO clusters (black + white), never one grey.
 """
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class ClusterResult:
+    """One dominant color found in an image, BEFORE the relevance filter.
+
+    The relevance filter (coverage threshold + ΔE merging) runs downstream
+    in core/image_pipeline.py — strategies report everything they find.
+    """
+
+    lab: tuple[float, float, float]
+    """CIELAB centroid. L in [0, 100]; a/b roughly in [-128, 128]."""
+
+    coverage: float
+    """Fraction of the image's pixels in this cluster, in [0, 1].
+    All clusters' coverages sum to ~1.0."""
+
+
+class ClusteringStrategy(Protocol):
+    """Interface implemented by adapters/clustering/* (KMeansSweep, HDBSCAN)."""
+
+    def cluster(self, lab_pixels: np.ndarray) -> list[ClusterResult]:
+        """Group pixels into dominant colors.
+
+        Args:
+            lab_pixels: float array of shape (N, 3) — one CIELAB color per
+                pixel, already downscaled by the caller.
+
+        Returns:
+            Clusters sorted by coverage, largest first. Empty input -> [].
+            Must be deterministic: same input always yields the same output.
+        """
+        ...
