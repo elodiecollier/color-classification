@@ -20,6 +20,7 @@ requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.4.6",
     "pillow>=12.2.0",
+    "pydantic>=2",
     "scikit-image>=0.26.0",
     "scikit-learn>=1.9.0",
 ]
@@ -28,3 +29,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
