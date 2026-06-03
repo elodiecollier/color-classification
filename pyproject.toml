@@ -1,0 +1,23 @@
+# Project metadata + dependency manifest. No build logic lives here.
+#
+# Dependencies are added per workstream as modules get implemented (see
+# CLAUDE.md §14). Expected eventual deps, kept here as a checklist:
+#   - pydantic                  -> core/models.py (schema + validation)
+#   - google-genai              -> core/gemini.py (name analysis call)
+#   - numpy / scikit-image      -> adapters/clustering (LAB conversion, ΔE)
+#   - scikit-learn or hdbscan   -> adapters/clustering (pixel clustering)
+#   - pillow                    -> image decode + downscale
+#   - pytest                    -> tests/
+#
+# NOTE: `core/` must stay importable without the heavy CV deps — those belong
+# to the clustering/image adapters, not the domain core (CLAUDE.md §10 conventions).
+
+[project]
+name = "color-classification"
+version = "0.0.0"
+description = "Standalone color enrichment (swatch name + image -> color buckets) + bucket-search demo, against a mocked data layer."
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = []

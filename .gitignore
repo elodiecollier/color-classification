@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets — GOOGLE_GENAI_API_KEY lives in .env, never committed
+.env
+
+# Local run artifacts: the file sink writes color records (JSONL) and the
+# review queue here (see adapters/mock/file_color_sink.py). Outputs are
+# reproducible from fixtures, so they stay out of git.
+output/
+
+# Local swatch images used by the mock image store can be large/binary;
+# small curated test images under fixtures/images/ ARE committed — only
+# bulk local dumps go here.
+fixtures/images/_local/
+
+# OS noise
+.DS_Store
