@@ -84,6 +84,30 @@ class ConfidenceThresholds(BaseModel):
         description="Name-analysis confidence below this counts as 'not intuitive' "
                     "-> fall through to the image (§6 step 1). Applied by reconcile.",
     )
+    name_only_cap: float = Field(
+        default=0.7, ge=0.0, le=1.0,
+        description="Confidence ceiling when ONLY the name signal exists — names "
+                    "alone are the weakest signal (§6), however sure Gemini sounds",
+    )
+    image_only_confidence: float = Field(
+        default=0.85, ge=0.0, le=1.0,
+        description="Confidence when only the image signal exists (authoritative, "
+                    "but uncorroborated by a name)",
+    )
+    agreement_confidence: float = Field(
+        default=0.95, ge=0.0, le=1.0,
+        description="Confidence when name and image AGREE — two independent "
+                    "signals cross-checked (§6 step 3)",
+    )
+    conflict_confidence: float = Field(
+        default=0.4, ge=0.0, le=1.0,
+        description="Confidence on a name-vs-image CONFLICT record (also flagged "
+                    "needs_review; never silently pick one signal)",
+    )
+    needs_review_below: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description="Any record with confidence below this is flagged needs_review",
+    )
 
 
 class Thresholds(BaseModel):
