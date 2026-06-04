@@ -86,6 +86,36 @@ class ConfidenceThresholds(BaseModel):
     )
 
 
+class ClusteringThresholds(BaseModel):
+    """Image-pipeline + clustering knobs (CLAUDE.md §7).
+
+    `max_edge` / `min_coverage` / `merge_delta_e` are consumed by
+    `core/image_pipeline.py`; the k-sweep params are consumed by the CALLER to
+    construct `adapters/clustering` `KMeansSweep` (which never imports config).
+    """
+
+    model_config = _FROZEN
+
+    max_edge: int = Field(
+        default=200, ge=16, description="Downscale the longest image edge to this before clustering"
+    )
+    # --- relevance filter (core/image_pipeline) ---
+    min_coverage: float = Field(
+        default=0.05, ge=0.0, le=1.0,
+        description="Drop clusters covering less than this fraction of pixels (after merging)",
+    )
+    merge_delta_e: float = Field(
+        default=3.0, ge=0.0,
+        description="Merge centroids within this ΔE76 (just above the ~2.3 JND); "
+                    "farther-apart clusters NEVER merge — a checkerboard stays black+white",
+    )
+    # --- k-means strategy params (used by the caller to build KMeansSweep) ---
+    k_max: int = Field(default=6, ge=2, description="Upper end of the k-sweep (k = 2..k_max)")
+    solid_delta_e: float = Field(default=2.0, ge=0.0, description="Solid-swatch spread cutoff")
+    silhouette_sample: int = Field(default=2000, ge=2, description="Max pixels scored for silhouette")
+    seed: int = Field(default=0, description="Fixes all randomness for determinism")
+
+
 class Thresholds(BaseModel):
     """Top-level tunable config. Compose new nested sections here per workstream."""
 
@@ -93,9 +123,7 @@ class Thresholds(BaseModel):
 
     bucketing: BucketingThresholds = BucketingThresholds()
     confidence: ConfidenceThresholds = ConfidenceThresholds()
-    # TODO (CV workstream): clustering: ClusteringThresholds
-    #   downscale max edge ~200px; k-sweep range (1..6); min coverage % to
-    #   survive; ΔE merge distance (closer merges; farther must NOT — checkerboard).
+    clustering: ClusteringThresholds = ClusteringThresholds()
 
 
 DEFAULT = Thresholds()
