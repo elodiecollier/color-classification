@@ -156,24 +156,17 @@ async def classify(product_id: int, file: UploadFile) -> dict:
     if pixels is None:
         raise HTTPException(400, "not a decodable image")
 
+    # KMeansSweep already returns the unified core.models.ClusterResult
+    # (lab tuple + coverage), so it feeds buckets_for_centroids directly.
     clusters = KMeansSweep().cluster(pixels)
-    # Bridge the port's tuple-based ClusterResult to the core/models one.
-    # TODO: unify on core.models.ClusterResult per its coordination note.
-    core_clusters = [
-        ClusterResult(
-            centroid=LabColor(L=min(max(c.lab[0], 0.0), 100.0), a=c.lab[1], b=c.lab[2]),
-            coverage=c.coverage,
-        )
-        for c in clusters
-    ]
-    groups = [str(b) for b in buckets_for_centroids(core_clusters)]
+    groups = [str(b) for b in buckets_for_centroids(clusters)]
     detail = [
         {
-            "bucket": str(bucket_for_hsl(lab_to_hsl(c.centroid))),
-            "css": _css(c.centroid),
+            "bucket": str(bucket_for_hsl(lab_to_hsl(_lab_of(c)))),
+            "css": _css(_lab_of(c)),
             "coverage": round(c.coverage, 3),
         }
-        for c in core_clusters
+        for c in clusters
     ]
 
     confident = 0 < len(groups) <= 2
@@ -197,6 +190,12 @@ async def classify(product_id: int, file: UploadFile) -> dict:
         "applied": confident,
         "review_id": review_id,
     }
+
+
+def _lab_of(c: ClusterResult) -> LabColor:
+    """ClusterResult's (L, a, b) tuple -> LabColor (L clamped to the valid range)."""
+    L, a, b = c.lab
+    return LabColor(L=min(max(L, 0.0), 100.0), a=a, b=b)
 
 
 def _css(lab: LabColor) -> str:

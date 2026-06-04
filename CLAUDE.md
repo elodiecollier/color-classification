@@ -184,9 +184,17 @@ developed in parallel against a stub with zero backend dependency:
 `color_groups` values are always one of the fixed §5 buckets; `canonical_hsl`
 lets the UI render a color chip even before real swatch images are wired.
 
-**UI:** a simple front-end (`frontend/`) that calls `/search` and renders the
-results — color chip from `canonical_hsl`, swatch name, company, image, and a
-`needs_review` flag. Keep it minimal; it's a demo, not a product surface.
+**UI:** a simple front-end that calls the search API and renders results — color
+chip from `canonical_hsl`, swatch name, company, image, and a `needs_review`
+flag. Keep it minimal; it's a demo, not a product surface.
+
+> **Current state / drift (decision pending — §16):** the demo `webapp/` is built
+> and working, but uses its **own** shapes rather than the contract above:
+> `GET /api/search?q=<term>` → `{query, bucket, matched_via, products:[…]}` with
+> color buckets as plain-string `tags`, plus `/api/classify` (live pipeline),
+> `/api/review`, and `/api/products`. The `SearchResponse`/`SearchResultItem`
+> contract above remains the intended target; whether to align the webapp to it
+> is a decision the team will make.
 
 ## 11. Repo layout (intended)
 
@@ -213,15 +221,18 @@ color-classification/
   cli/
     run_batch.py         # batch over records: 3-way branch, file sink + review queue
     search.py            # term → bucket → records from the output file
-  api/
-    main.py              # FastAPI: GET /search?color=<term> -> SearchResponse (§10)
-  frontend/              # the demo UI (partner's lane) — calls the search API
+  webapp/                # demo API + static UI (partner's lane), FastAPI-served
+    main.py              # /api/search, /api/classify (live pipeline), review queue
+    db.py                # in-memory mock product table for the demo
+    static/              # index.html + app.js + style.css
   tests/
 ```
 Keep `core/` free of external dependencies; all I/O behind `ports/`. Swappable
-behind interfaces: the clustering algorithm and the file/DB sink. The search API
-(`api/`, FastAPI + uvicorn) and the `frontend/` UI are thin demo layers over the
-search — they depend on the §10 contract, not on `core/` internals.
+behind interfaces: the clustering algorithm and the file/DB sink. The demo lives
+in `webapp/` (FastAPI + uvicorn serving a static UI) — a thin layer that calls
+`core/` + the clustering adapter. NOTE: it currently uses its own simplified
+shapes (string `tags`, an in-memory product table) that diverge from the §10
+`SearchResponse` contract — reconciliation is an open decision (§16).
 
 ## 12. Mocking the data layer (concrete)
 
@@ -264,10 +275,11 @@ frontend/UI. (The AI agent is a tool used within either lane.) `✅` = done.
     → sink. Then run on real swatches and tune the §5 thresholds.
 
 ### Phase 2 — Search + demo UI
-11. **[You]** `cli/search.py` (term → bucket → records), then `api/main.py`
-    (`GET /search` → `SearchResponse`).
-12. **[Partner]** the `frontend/` UI against the §10 contract — can start **now**
-    against a stubbed response; no backend dependency.
+11. **[Partner]** the demo `webapp/` — search, admin tags, review queue, and a
+    live `/api/classify` that runs the real pipeline. — ✅ built (uses its own
+    shapes; see the §10 drift note).
+12. **[You/team]** decide whether to align `webapp/` to the §10 `SearchResponse`
+    contract (and, if so, expose it via `cli/search.py`). — *pending*
 
 ### Phase 3 — Tests & eval
 13. **[You]** Unit tests across the lanes + an accuracy spot-check on records with
@@ -285,11 +297,10 @@ ports, and `ClusterResult` — so the two lanes run independently:
 
 | Stream | Owner | Depends on | Status / can start |
 |---|---|---|---|
-| **Frontend / demo UI** | Partner | §10 search-API response shape | now — against a stub |
+| **Frontend / demo UI** (`webapp/`) | Partner | §10 shape (or its own) | ✅ built (own shapes — drift TBD) |
 | **Image pipeline** (relevance filter + glue) | You | `ClusterResult` + buckets + `ImageAnalysisResult` | now |
 | **Name analysis** (Gemini) | You | `gemini` + `NameAnalysisResult` | now |
 | **Mock data layer** (ports + `adapters/mock` + fixtures) | You | the ports + `MaterialRecord` | now |
-| **Search logic + API** (`cli/search`, `api/main`) | You | `SearchResponse` + an output file | after search logic |
 | **Integration adapters** (R2, Directus) | You | the ports | parallel, anytime |
 
 **The clean seam: front-end and back-end never touch each other's internals** —
@@ -337,6 +348,10 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 - A few real swatches (name + image) to tune the §5 thresholds against, plus
   `GOOGLE_GENAI_API_KEY`.
 - Whether a **neutral/beige** bucket is needed once tested on real materials.
+- **Webapp contract drift:** align the demo `webapp/` to the §10
+  `SearchResponse`/`ColorRecord` contract, or keep its simplified demo shapes
+  (string `tags`, in-memory product table) and adapt the real pipeline output to
+  it later? (Team decision.)
 
 ## 17. Out of scope / do not use
 
@@ -348,12 +363,14 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 In active build. **Done:** the bucketing module (§5); shared value types with
 `ClusterResult` unified into a single type (`core/models.py`); the config
-bucketing section; the clustering adapters (k-means sweep + preprocess); and the
-full record + search-API schema (§8, §10). **38 tests pass.**
+bucketing section; the clustering adapters (k-means sweep + preprocess); the full
+record + search-API schema (§8, §10); and a working demo `webapp/` (search +
+admin + review queue + a live `/api/classify` that runs the real pipeline). **38
+tests pass.** (`/api/classify` was fixed to the unified `ClusterResult`.)
 
 **Next — You (backend):** `image_pipeline` glue + `name_analysis`, then the mock
-data layer and `run_batch`, then `cli/search` + `api/main`. **Partner (UI):** the
-`frontend/` demo against the §10 contract (can start now against a stub).
+data layer and `run_batch`. **Partner (UI):** `webapp/` is built; iterate on it.
+**Team:** the §10-contract-vs-webapp-shapes drift decision (§16).
 
 **Open external item:** a real `company_colors` sample for `fixtures/` (§16) —
 needed before `run_batch` runs end-to-end on real data.
