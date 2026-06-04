@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Demo frontend: two tabs (Search / Admin) over the mock DB API.
+     Plain HTML + vanilla JS (app.js) — no framework, no build step. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acelab · Color Classification Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🎨 Color Classification <span class="muted">demo</span></h1>
+    <nav>
+      <button id="tab-search" class="tab active">Search</button>
+      <button id="tab-admin" class="tab">Admin</button>
+    </nav>
+  </header>
+
+  <!-- ============ TAB 1: the search demo (CLAUDE.md §10) ============ -->
+  <main id="view-search">
+    <div class="hero">
+      <p class="hint">Try <b>green</b> — or a colorway word like <b>sage</b>, <b>navy</b>, <b>terracotta</b>…</p>
+      <form id="search-form">
+        <input id="search-input" type="search" placeholder="Search by color…" autofocus />
+        <button type="submit">Search</button>
+      </form>
+      <p id="search-meta" class="muted"></p>
+    </div>
+    <div id="search-results" class="cards"></div>
+  </main>
+
+  <!-- ============ TAB 2: mock admin view ============ -->
+  <main id="view-admin" hidden>
+    <section>
+      <h2>⚠️ Needs review <span id="review-count" class="badge"></span></h2>
+      <p class="muted">Ambiguous results from the classifier land here for manual triage.</p>
+      <div id="review-list"></div>
+    </section>
+
+    <section>
+      <h2>Classify a swatch</h2>
+      <p class="muted">Runs the real pipeline: image → k-means clustering → color buckets.
+        Confident results auto-tag the product; ambiguous ones go to review.</p>
+      <form id="classify-form">
+        <select id="classify-product"></select>
+        <input id="classify-file" type="file" accept="image/*" required />
+        <button type="submit">Classify</button>
+      </form>
+      <div id="classify-result"></div>
+    </section>
+
+    <section>
+      <h2>Products</h2>
+      <table id="products-table">
+        <thead><tr><th>Swatch</th><th>Colorway</th><th>Product</th><th>Company</th><th>Color tags</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- bucket suggestions for the add-tag inputs -->
+  <datalist id="bucket-list"></datalist>
+  <script src="app.js"></script>
+</body>
+</html>
