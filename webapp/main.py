@@ -33,13 +33,16 @@ from pydantic import BaseModel
 from adapters.clustering.kmeans_sweep import KMeansSweep
 from adapters.clustering.preprocess import load_lab_pixels
 from config.thresholds import DEFAULT
+from core.buckets import bucket_for_hsl, lab_to_hsl
 from core.image_pipeline import analyze_swatch
 from core.models import (
     ColorBucket,
     ColorRecord,
+    LabColor,
     MaterialRecord,
     SearchResponse,
     SearchResultItem,
+    Source,
 )
 from webapp import db
 
@@ -83,9 +86,47 @@ def buckets() -> list[str]:
     return db.BUCKETS
 
 
-@app.get("/api/products", response_model=list[SearchResultItem])
-def products() -> list[SearchResultItem]:
-    return [db.to_search_item(m, db.find_record(m)) for m in db.MATERIALS]
+class AdminProduct(BaseModel):
+    """Admin-view row: the §10 item + per-bucket detail derived from the record.
+
+    `bucket_coverage` maps EVERY taxonomy bucket -> pixel-coverage share from
+    the record's lab_centroids (0.0 when not detected / no centroids). This is
+    the per-color evidence behind the tags; `confidence` is the record-level
+    value (per §8 there is no per-tag confidence — coverage is the honest
+    per-bucket number)."""
+
+    item: SearchResultItem
+    source: Source | None = None
+    confidence: float = 0.0
+    bucket_coverage: dict[str, float]
+
+
+def _bucket_coverage(record: ColorRecord | None) -> dict[str, float]:
+    """Aggregate centroid coverage per bucket, over the full 10-bucket taxonomy."""
+    coverage = {b: 0.0 for b in db.BUCKETS}
+    if record is not None:
+        for c in record.lab_centroids:
+            L, a, b_ = c.lab
+            lab = LabColor(L=min(max(L, 0.0), 100.0), a=a, b=b_)
+            bucket = bucket_for_hsl(lab_to_hsl(lab), DEFAULT.bucketing)
+            coverage[bucket.value] = round(coverage[bucket.value] + c.coverage, 3)
+    return coverage
+
+
+@app.get("/api/products", response_model=list[AdminProduct])
+def products() -> list[AdminProduct]:
+    out = []
+    for material in db.MATERIALS:
+        record = db.find_record(material)
+        out.append(
+            AdminProduct(
+                item=db.to_search_item(material, record),
+                source=record.source if record else None,
+                confidence=record.confidence if record else 0.0,
+                bucket_coverage=_bucket_coverage(record),
+            )
+        )
+    return out
 
 
 def _material_or_404(item_id: str) -> MaterialRecord:
@@ -141,10 +182,15 @@ def remove_tag(item_id: str, tag: str) -> SearchResultItem:
 
 
 class ReviewItem(BaseModel):
-    """Queue entry: the flagged ColorRecord + its material's display fields."""
+    """Queue entry: the flagged ColorRecord + its material's display fields.
+
+    `bucket_coverage` (full 10-bucket map, like AdminProduct's) lets the UI
+    offer EVERY bucket for resolution, showing the pixel evidence where it
+    exists — a reviewer may pick a color the algorithm didn't suggest."""
 
     material: MaterialRecord
     record: ColorRecord
+    bucket_coverage: dict[str, float]
 
 
 class ResolveBody(BaseModel):
@@ -157,7 +203,10 @@ def review_queue() -> list[ReviewItem]:
     for record in db.REVIEW_QUEUE:
         material = db.get_material(db.key_of(record.material_id, record.swatch_id))
         if material is not None:
-            items.append(ReviewItem(material=material, record=record))
+            items.append(ReviewItem(
+                material=material, record=record,
+                bucket_coverage=_bucket_coverage(record),
+            ))
     return items
 
 

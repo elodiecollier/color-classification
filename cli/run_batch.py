@@ -41,6 +41,8 @@ def main() -> None:
 
     llm_client = None
     if args.with_name:
+        from dotenv import load_dotenv
+        load_dotenv()  # picks up OPENROUTER_API_KEY from .env (never committed)
         key = os.environ.get("OPENROUTER_API_KEY")
         if not key:
             print("ERROR: --with-name requires OPENROUTER_API_KEY to be set.", file=sys.stderr)
