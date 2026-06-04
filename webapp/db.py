@@ -1,132 +1,111 @@
-"""In-memory mock DB for the demo webapp — ON the core/models.py contract.
+"""Demo webapp data layer — a read-through view over the REAL pipeline data.
 
-Mirrors the real system's split (CLAUDE.md §12):
-  - MATERIALS:      MaterialRecord rows (what Directus holds).
-  - COLOR_RECORDS:  published §8 ColorRecords keyed by material_id (the color
-                    sink). Search reads ONLY from here.
-  - REVIEW_QUEUE:   ColorRecords with needs_review=True, NOT yet published —
-                    resolving one publishes it.
+No hand-seeded demo data. Loaded at import time:
+  - MATERIALS:      fixtures/records.json (the same MaterialRecords run_batch reads)
+  - COLOR_RECORDS:  output/color_records.jsonl  — published §8 records, as written
+                    by `uv run python -m cli.run_batch`
+  - REVIEW_QUEUE:   output/review_queue.jsonl   — needs_review records
 
-Mutations live in process memory; restarting the server resets the demo.
-A Directus-backed store replaces this at integration time via ports/.
+So the demo flow is: edit fixtures -> run the batch -> (re)start the webapp.
+Admin mutations (tags, resolutions, live classify) are in-memory on top —
+restart re-reads the files. A Directus-backed store replaces this via ports/.
+
+Items are keyed by swatch (`swatch_id`, falling back to `material_id`), since a
+material can have multiple swatches and each gets its own ColorRecord.
 """
 
 from __future__ import annotations
 
-import colorsys
+import json
+from pathlib import Path
 
-from core.models import (
-    ClusterResult,
-    ColorBucket,
-    ColorRecord,
-    HSL,
-    MaterialRecord,
-    SearchResultItem,
-)
+from core.models import ColorBucket, ColorRecord, MaterialRecord, SearchResultItem
+
+FIXTURES_PATH = Path("fixtures/records.json")
+RECORDS_PATH = Path("output/color_records.jsonl")
+REVIEW_PATH = Path("output/review_queue.jsonl")
 
 BUCKETS: list[str] = [b.value for b in ColorBucket]
 
-# Query-term -> bucket synonyms for the search demo (§10: "map the user's color
-# term -> bucket"). The real version reuses Gemini name-analysis; a static map
-# is plenty for the demo.
+# Query-term -> bucket synonyms for the search demo (§10). The real version
+# reuses Gemini name-analysis; a static map is plenty for the demo.
 SYNONYMS: dict[str, ColorBucket] = {
     "sage": ColorBucket.GREEN, "lime": ColorBucket.GREEN, "forest": ColorBucket.GREEN,
-    "olive": ColorBucket.GREEN, "mint": ColorBucket.GREEN,
+    "olive": ColorBucket.GREEN, "mint": ColorBucket.GREEN, "avocado": ColorBucket.GREEN,
     "navy": ColorBucket.BLUE, "sky": ColorBucket.BLUE, "teal": ColorBucket.BLUE,
-    "azure": ColorBucket.BLUE,
+    "azure": ColorBucket.BLUE, "sapphire": ColorBucket.BLUE,
     "crimson": ColorBucket.RED, "scarlet": ColorBucket.RED, "pink": ColorBucket.RED,
     "rose": ColorBucket.RED, "burgundy": ColorBucket.RED,
-    "rust": ColorBucket.ORANGE, "amber": ColorBucket.ORANGE, "tangerine": ColorBucket.ORANGE,
+    "rust": ColorBucket.ORANGE, "amber": ColorBucket.ORANGE, "spice": ColorBucket.ORANGE,
     "gold": ColorBucket.YELLOW, "lemon": ColorBucket.YELLOW, "cream": ColorBucket.YELLOW,
     "violet": ColorBucket.PURPLE, "lavender": ColorBucket.PURPLE, "plum": ColorBucket.PURPLE,
     "charcoal": ColorBucket.GREY, "slate": ColorBucket.GREY, "silver": ColorBucket.GREY,
-    "gray": ColorBucket.GREY,
+    "gray": ColorBucket.GREY, "pebble": ColorBucket.GREY, "ash": ColorBucket.GREY,
     "ivory": ColorBucket.WHITE, "snow": ColorBucket.WHITE,
-    "ebony": ColorBucket.BLACK, "onyx": ColorBucket.BLACK,
+    "ebony": ColorBucket.BLACK, "onyx": ColorBucket.BLACK, "midnight": ColorBucket.BLACK,
     "tan": ColorBucket.BROWN, "beige": ColorBucket.BROWN, "walnut": ColorBucket.BROWN,
     "chocolate": ColorBucket.BROWN, "terracotta": ColorBucket.BROWN,
+    "teak": ColorBucket.BROWN, "timber": ColorBucket.BROWN,
 }
 
 
-def _hsl(hex_str: str) -> HSL:
-    """'#RRGGBB' -> HSL, for seeding canonical_hsl (UI renders chips from it)."""
-    r, g, b = (int(hex_str[i : i + 2], 16) / 255 for i in (1, 3, 5))
-    h, lightness, s = colorsys.rgb_to_hls(r, g, b)
-    return HSL(h=h * 360, s=s, l=lightness)
+def key_of(material_id: str, swatch_id: str | None) -> str:
+    """Unique per-swatch key — a material can have several swatches."""
+    return swatch_id or material_id
 
 
-# Demo seed: (material_id, swatch_id, swatch_name, company, display hex,
-# published color_groups — None = not yet classified).
-# Narrative: 'Fall River Glaze' (m2) sits in the review queue; 'Driftwood' (m9)
-# is fully unclassified so a swatch can be classified live during the demo.
-_SEED: list[tuple[str, str, str, str, str, list[ColorBucket] | None]] = [
-    ("m1", "s1", "Sage Mist", "GreenBuild Co", "#9CAF88", [ColorBucket.GREEN]),
-    ("m2", "s2", "Fall River Glaze", "Sun Mountain Door", "#B06A4A", None),
-    ("m3", "s3", "Arctic Frost", "ClearView", "#F4F7F8", [ColorBucket.WHITE]),
-    ("m4", "s4", "Charcoal Slate", "TopShield", "#3B3F42", [ColorBucket.GREY, ColorBucket.BLACK]),
-    ("m5", "s5", "Terracotta Sun", "EarthForm", "#C8704B", [ColorBucket.ORANGE, ColorBucket.BROWN]),
-    ("m6", "s6", "Navy Harbor", "SteelWorks", "#2C3E66", [ColorBucket.BLUE]),
-    ("m7", "s7", "Lemon Zest", "BrightSpace", "#E8D44D", [ColorBucket.YELLOW]),
-    ("m8", "s8", "Plum Twilight", "ColorCraft", "#6E4A7E", [ColorBucket.PURPLE]),
-    ("m9", "s9", "Driftwood", "ShoreLine", "#A89F91", None),
-    ("m10", "s10", "Forest Canopy", "GreenBuild Co", "#3F6B4F", [ColorBucket.GREEN]),
-]
+def _load_materials() -> list[MaterialRecord]:
+    if not FIXTURES_PATH.exists():
+        return []
+    return [MaterialRecord(**row) for row in json.loads(FIXTURES_PATH.read_text())]
 
-MATERIALS: list[MaterialRecord] = [
-    MaterialRecord(material_id=mid, swatch_id=sid, swatch_name=name, company=company)
-    for mid, sid, name, company, _hex, _groups in _SEED
-]
+
+def _load_jsonl(path: Path) -> list[ColorRecord]:
+    if not path.exists():
+        return []
+    return [
+        ColorRecord.model_validate_json(line)
+        for line in path.read_text().splitlines()
+        if line.strip()
+    ]
+
+
+MATERIALS: list[MaterialRecord] = _load_materials()
 
 COLOR_RECORDS: dict[str, ColorRecord] = {
-    mid: ColorRecord(
-        material_id=mid,
-        swatch_id=sid,
-        source="manual",
-        color_groups=groups,
-        canonical_hsl=_hsl(hex_str),
-        confidence=0.95,
-    )
-    for mid, sid, _name, _company, hex_str, groups in _SEED
-    if groups is not None
+    key_of(r.material_id, r.swatch_id): r for r in _load_jsonl(RECORDS_PATH)
 }
 
-# 'Fall River Glaze': name vs image conflicted (§6 step 3) -> flagged, queued,
-# NOT published. The candidate buckets + raw centroids ride on the record.
-REVIEW_QUEUE: list[ColorRecord] = [
-    ColorRecord(
-        material_id="m2",
-        swatch_id="s2",
-        source="reconciled",
-        color_groups=[ColorBucket.BROWN, ColorBucket.ORANGE],
-        canonical_hsl=_hsl("#B06A4A"),
-        lab_centroids=[
-            ClusterResult(lab=(45.0, 18.0, 26.0), coverage=0.58),
-            ClusterResult(lab=(58.0, 25.0, 38.0), coverage=0.42),
-        ],
-        coverage=1.0,
-        confidence=0.45,
-        needs_review=True,
-        conflict_reason="Name 'Fall River Glaze' not an intuitive color (low "
-                        "confidence); image clusters straddle the brown/orange boundary.",
-    ),
-]
+REVIEW_QUEUE: list[ColorRecord] = _load_jsonl(REVIEW_PATH)
 
 
 # --- lookups -----------------------------------------------------------------
 
 
-def get_material(material_id: str) -> MaterialRecord | None:
-    return next((m for m in MATERIALS if m.material_id == material_id), None)
+def get_material(item_id: str) -> MaterialRecord | None:
+    """Look an item up by its swatch key (or bare material_id)."""
+    return next(
+        (m for m in MATERIALS
+         if key_of(m.material_id, m.swatch_id) == item_id or m.material_id == item_id),
+        None,
+    )
 
 
-def get_queued(material_id: str) -> ColorRecord | None:
-    return next((r for r in REVIEW_QUEUE if r.material_id == material_id), None)
+def get_queued(item_id: str) -> ColorRecord | None:
+    return next(
+        (r for r in REVIEW_QUEUE if key_of(r.material_id, r.swatch_id) == item_id),
+        None,
+    )
 
 
-def find_record(material_id: str) -> ColorRecord | None:
+def published_for(material: MaterialRecord) -> ColorRecord | None:
+    return COLOR_RECORDS.get(key_of(material.material_id, material.swatch_id))
+
+
+def find_record(material: MaterialRecord) -> ColorRecord | None:
     """Published record if any, else the queued (pending-review) one — what the
-    admin view shows. Search must use COLOR_RECORDS only."""
-    return COLOR_RECORDS.get(material_id) or get_queued(material_id)
+    admin view shows. Search must use published_for/COLOR_RECORDS only."""
+    return published_for(material) or get_queued(key_of(material.material_id, material.swatch_id))
 
 
 def to_search_item(material: MaterialRecord, record: ColorRecord | None) -> SearchResultItem:
@@ -136,7 +115,7 @@ def to_search_item(material: MaterialRecord, record: ColorRecord | None) -> Sear
         swatch_id=material.swatch_id,
         swatch_name=material.swatch_name,
         company=material.company,
-        image_url=None,  # no hosted swatch images in the mock; UI uses canonical_hsl
+        image_url=f"/swatches/{material.image_ref}" if material.image_ref else None,
         color_groups=record.color_groups if record else [],
         canonical_hsl=record.canonical_hsl if record else None,
         confidence=record.confidence if record else 0.0,

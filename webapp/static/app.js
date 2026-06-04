@@ -16,6 +16,19 @@ const UNCLASSIFIED = "repeating-linear-gradient(45deg,#eceef1,#eceef1 6px,#f8f9f
 const cssOf = (hsl) =>
   hsl ? `hsl(${Math.round(hsl.h)} ${Math.round(hsl.s * 100)}% ${Math.round(hsl.l * 100)}%)` : UNCLASSIFIED;
 
+// Prefer the real swatch image (image_url, served from fixtures/images/);
+// fall back to the canonical_hsl color fill / unclassified stripes.
+// Longhand properties: the shorthand can't combine a gradient fallback with
+// a url() image in one layer (invalid CSS -> dropped entirely).
+const swatchCss = (item) =>
+  item.image_url
+    ? `background-image:url('${encodeURI(item.image_url)}');background-size:cover;` +
+      `background-position:center;background-color:#eef0f3`
+    : `background:${cssOf(item.canonical_hsl)}`;
+
+// The per-swatch key used in admin API paths (a material can have many swatches).
+const idOf = (x) => x.swatch_id ?? x.material_id;
+
 const api = async (path, opts = {}) => {
   const res = await fetch(path, opts);
   if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
@@ -54,7 +67,7 @@ const resultCard = (item) => {
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = `
-    <div class="swatch" style="background:${cssOf(item.canonical_hsl)}"></div>
+    <div class="swatch" style="${swatchCss(item)}"></div>
     <div class="body">
       <div class="name">${item.swatch_name ?? item.material_id}
         ${item.needs_review ? '<span class="chip">⚠ review</span>' : ""}</div>
@@ -106,14 +119,14 @@ function renderProducts(items) {
   for (const item of items) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><div class="mini-swatch" style="background:${cssOf(item.canonical_hsl)}"></div></td>
-      <td><b>${item.swatch_name}</b>${item.needs_review ? ' <span class="chip">⚠ review</span>' : ""}</td>
+      <td><div class="mini-swatch" style="${swatchCss(item)}"></div></td>
+      <td><b>${item.swatch_name ?? item.material_id}</b>${item.needs_review ? ' <span class="chip">⚠ review</span>' : ""}</td>
       <td>${item.company ?? ""}</td>
       <td class="groups-cell"></td>`;
     const cell = tr.querySelector(".groups-cell");
     item.color_groups.forEach((b) =>
       cell.appendChild(groupChip(b, async () => {
-        await api(`/api/products/${item.material_id}/tags/${b}`, { method: "DELETE" });
+        await api(`/api/products/${idOf(item)}/tags/${b}`, { method: "DELETE" });
         refreshAdmin();
       })),
     );
@@ -126,7 +139,7 @@ function renderProducts(items) {
       if (e.key === "Enter" && input.value.trim()) {
         e.preventDefault();
         try {
-          await api(`/api/products/${item.material_id}/tags`, {
+          await api(`/api/products/${idOf(item)}/tags`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ tag: input.value }),
@@ -176,7 +189,7 @@ function renderReview(review) {
       sug.appendChild(chip);
     }
     div.querySelector(".approve").onclick = async () => {
-      await api(`/api/review/${record.material_id}/resolve`, {
+      await api(`/api/review/${idOf(record)}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ color_groups: [...selected] }),
@@ -184,7 +197,7 @@ function renderReview(review) {
       refreshAdmin();
     };
     div.querySelector(".dismiss").onclick = async () => {
-      await api(`/api/review/${record.material_id}/dismiss`, { method: "POST" });
+      await api(`/api/review/${idOf(record)}/dismiss`, { method: "POST" });
       refreshAdmin();
     };
     list.appendChild(div);
@@ -196,8 +209,8 @@ function renderClassifySelect(items) {
   sel.replaceChildren(
     ...items.map((item) =>
       Object.assign(document.createElement("option"), {
-        value: item.material_id,
-        textContent: `${item.swatch_name} — ${item.company}${item.color_groups.length ? "" : " (unclassified)"}`,
+        value: idOf(item),
+        textContent: `${item.swatch_name ?? item.material_id} — ${item.company ?? "?"}${item.color_groups.length ? "" : " (unclassified)"}`,
       }),
     ),
   );

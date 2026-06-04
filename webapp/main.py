@@ -1,23 +1,25 @@
 """Demo webapp API + static frontend host — ON the §10 contract.
 
-Run:    uv run uvicorn webapp.main:app --reload
-Open:   http://localhost:8000
+Data comes from the REAL pipeline (see webapp/db.py):
+    1. edit fixtures/records.json (+ drop images in fixtures/images/)
+    2. uv run python -m cli.run_batch           # writes output/*.jsonl
+    3. uv run uvicorn webapp.main:app --reload  # serves a view over both
 
 The front/back contract (CLAUDE.md §10, types in core/models.py):
   GET    /search?color=<term>            -> SearchResponse
 
-Demo-only admin endpoints (not part of the §10 contract, but composed strictly
-from the contract types — SearchResultItem / MaterialRecord / ColorRecord):
+Demo-only admin endpoints (composed strictly from the contract types):
   GET    /api/buckets                    -> the 10-bucket taxonomy
   GET    /api/products                   -> list[SearchResultItem]
-  POST   /api/products/{mid}/tags        -> SearchResultItem   {"tag": "green"}
-  DELETE /api/products/{mid}/tags/{tag}  -> SearchResultItem
+  POST   /api/products/{item_id}/tags    -> SearchResultItem   {"tag": "green"}
+  DELETE /api/products/{item_id}/tags/{tag} -> SearchResultItem
   GET    /api/review                     -> list[ReviewItem{material, record}]
-  POST   /api/review/{mid}/resolve       -> ColorRecord        {"color_groups": [...]}
-  POST   /api/review/{mid}/dismiss
-  POST   /api/classify/{mid}  (multipart image) -> ColorRecord
-         runs the REAL pipeline (preprocess -> k-means -> buckets); confident
-         results are published, ambiguous ones land in the review queue.
+  POST   /api/review/{item_id}/resolve   -> ColorRecord        {"color_groups": [...]}
+  POST   /api/review/{item_id}/dismiss
+  POST   /api/classify/{item_id}  (multipart image) -> ColorRecord (live pipeline)
+
+`item_id` is the per-swatch key: swatch_id, falling back to material_id.
+Admin mutations are in-memory; restart re-reads the files.
 """
 
 from __future__ import annotations
@@ -30,11 +32,11 @@ from pydantic import BaseModel
 
 from adapters.clustering.kmeans_sweep import KMeansSweep
 from adapters.clustering.preprocess import load_lab_pixels
-from core.buckets import buckets_for_centroids, lab_to_hsl
+from config.thresholds import DEFAULT
+from core.image_pipeline import analyze_swatch
 from core.models import (
     ColorBucket,
     ColorRecord,
-    LabColor,
     MaterialRecord,
     SearchResponse,
     SearchResultItem,
@@ -62,12 +64,10 @@ def search(color: str = "") -> SearchResponse:
 
     results: list[SearchResultItem] = []
     if bucket is not None:
-        results = [
-            db.to_search_item(m, db.COLOR_RECORDS[m.material_id])
-            for m in db.MATERIALS
-            if m.material_id in db.COLOR_RECORDS
-            and bucket in db.COLOR_RECORDS[m.material_id].color_groups
-        ]
+        for material in db.MATERIALS:
+            record = db.published_for(material)
+            if record is not None and bucket in record.color_groups:
+                results.append(db.to_search_item(material, record))
     return SearchResponse(query=color, bucket=bucket, count=len(results), results=results)
 
 
@@ -85,51 +85,55 @@ def buckets() -> list[str]:
 
 @app.get("/api/products", response_model=list[SearchResultItem])
 def products() -> list[SearchResultItem]:
-    return [db.to_search_item(m, db.find_record(m.material_id)) for m in db.MATERIALS]
+    return [db.to_search_item(m, db.find_record(m)) for m in db.MATERIALS]
 
 
-def _material_or_404(material_id: str) -> MaterialRecord:
-    material = db.get_material(material_id)
+def _material_or_404(item_id: str) -> MaterialRecord:
+    material = db.get_material(item_id)
     if material is None:
-        raise HTTPException(404, "no such material")
+        raise HTTPException(404, "no such material/swatch")
     return material
 
 
 def _bucket_or_422(tag: str) -> ColorBucket:
     try:
         return ColorBucket(tag.strip().lower())
-    except ValueError:
-        raise HTTPException(422, f"'{tag}' is not one of the {len(db.BUCKETS)} color buckets")
+    except ValueError as exc:
+        raise HTTPException(
+            422, f"'{tag}' is not one of the {len(db.BUCKETS)} color buckets"
+        ) from exc
 
 
-@app.post("/api/products/{material_id}/tags", response_model=SearchResultItem)
-def add_tag(material_id: str, body: TagBody) -> SearchResultItem:
-    material = _material_or_404(material_id)
+@app.post("/api/products/{item_id}/tags", response_model=SearchResultItem)
+def add_tag(item_id: str, body: TagBody) -> SearchResultItem:
+    material = _material_or_404(item_id)
     bucket = _bucket_or_422(body.tag)
-    record = db.COLOR_RECORDS.get(material_id)
+    key = db.key_of(material.material_id, material.swatch_id)
+    record = db.COLOR_RECORDS.get(key)
     if record is None:
         record = ColorRecord(
-            material_id=material_id, swatch_id=material.swatch_id,
+            material_id=material.material_id, swatch_id=material.swatch_id,
             source="manual", color_groups=[bucket], confidence=1.0,
         )
     elif bucket not in record.color_groups:
         record = record.model_copy(
             update={"color_groups": [*record.color_groups, bucket], "source": "manual"}
         )
-    db.COLOR_RECORDS[material_id] = record
+    db.COLOR_RECORDS[key] = record
     return db.to_search_item(material, record)
 
 
-@app.delete("/api/products/{material_id}/tags/{tag}", response_model=SearchResultItem)
-def remove_tag(material_id: str, tag: str) -> SearchResultItem:
-    material = _material_or_404(material_id)
+@app.delete("/api/products/{item_id}/tags/{tag}", response_model=SearchResultItem)
+def remove_tag(item_id: str, tag: str) -> SearchResultItem:
+    material = _material_or_404(item_id)
     bucket = _bucket_or_422(tag)
-    record = db.COLOR_RECORDS.get(material_id)
+    key = db.key_of(material.material_id, material.swatch_id)
+    record = db.COLOR_RECORDS.get(key)
     if record is not None:
         record = record.model_copy(
             update={"color_groups": [b for b in record.color_groups if b != bucket]}
         )
-        db.COLOR_RECORDS[material_id] = record
+        db.COLOR_RECORDS[key] = record
     return db.to_search_item(material, record)
 
 
@@ -149,17 +153,18 @@ class ResolveBody(BaseModel):
 
 @app.get("/api/review", response_model=list[ReviewItem])
 def review_queue() -> list[ReviewItem]:
-    return [
-        ReviewItem(material=db.get_material(r.material_id), record=r)
-        for r in db.REVIEW_QUEUE
-        if db.get_material(r.material_id) is not None
-    ]
+    items = []
+    for record in db.REVIEW_QUEUE:
+        material = db.get_material(db.key_of(record.material_id, record.swatch_id))
+        if material is not None:
+            items.append(ReviewItem(material=material, record=record))
+    return items
 
 
-@app.post("/api/review/{material_id}/resolve", response_model=ColorRecord)
-def resolve_review(material_id: str, body: ResolveBody) -> ColorRecord:
+@app.post("/api/review/{item_id}/resolve", response_model=ColorRecord)
+def resolve_review(item_id: str, body: ResolveBody) -> ColorRecord:
     """Human picks the bucket(s) -> record is published (source='manual')."""
-    queued = db.get_queued(material_id)
+    queued = db.get_queued(item_id)
     if queued is None:
         raise HTTPException(404, "no such review item")
     groups = [_bucket_or_422(t) for t in body.color_groups]
@@ -170,69 +175,72 @@ def resolve_review(material_id: str, body: ResolveBody) -> ColorRecord:
         }
     )
     db.REVIEW_QUEUE.remove(queued)
-    db.COLOR_RECORDS[material_id] = resolved
+    db.COLOR_RECORDS[item_id] = resolved
     return resolved
 
 
-@app.post("/api/review/{material_id}/dismiss")
-def dismiss_review(material_id: str) -> dict:
-    queued = db.get_queued(material_id)
+@app.post("/api/review/{item_id}/dismiss")
+def dismiss_review(item_id: str) -> dict:
+    queued = db.get_queued(item_id)
     if queued is None:
         raise HTTPException(404, "no such review item")
     db.REVIEW_QUEUE.remove(queued)
-    return {"dismissed": material_id}
+    return {"dismissed": item_id}
 
 
 # --- classify: the REAL pipeline, live --------------------------------------------
 
 
-@app.post("/api/classify/{material_id}", response_model=ColorRecord)
-async def classify(material_id: str, file: UploadFile) -> ColorRecord:
-    """Upload a swatch image -> preprocess -> k-means -> a §8 ColorRecord.
+@app.post("/api/classify/{item_id}", response_model=ColorRecord)
+async def classify(item_id: str, file: UploadFile) -> ColorRecord:
+    """Upload a swatch image -> the real image pipeline -> a §8 ColorRecord.
 
-    Demo confidence rule (stands in for the real §6 reconciliation, which needs
-    the name signal): 1-2 buckets -> published; 3+ -> review queue."""
-    material = _material_or_404(material_id)
+    Same core call as cli/run_batch (analyze_swatch incl. relevance filter);
+    image-only here, so the demo rule stands in for §6 reconciliation:
+    1-2 buckets -> published, 3+ -> review queue."""
+    material = _material_or_404(item_id)
+    key = db.key_of(material.material_id, material.swatch_id)
 
-    pixels = load_lab_pixels(await file.read())
-    if pixels is None:
-        raise HTTPException(400, "not a decodable image")
+    image_bytes = await file.read()
+    image_result = analyze_swatch(
+        image_bytes, load_pixels=load_lab_pixels, strategy=_strategy(), config=DEFAULT,
+    )
+    if image_result is None:
+        raise HTTPException(400, "not a decodable image (or no usable color)")
 
-    clusters = KMeansSweep().cluster(pixels)  # sorted by coverage desc
-    if not clusters:
-        raise HTTPException(400, "empty image")
-    groups = buckets_for_centroids(clusters)
-
-    dominant = clusters[0]
-    ambiguous = len(groups) > 2
+    ambiguous = len(image_result.buckets) > 2
     record = ColorRecord(
-        material_id=material_id,
+        material_id=material.material_id,
         swatch_id=material.swatch_id,
         source="image",
-        color_groups=groups,
-        canonical_hsl=lab_to_hsl(_lab_of(dominant.lab)),
-        lab_centroids=clusters,  # the durable raw asset (§4) — always kept
-        coverage=round(min(sum(c.coverage for c in clusters), 1.0), 3),
-        confidence=0.4 if ambiguous else round(dominant.coverage, 2),
+        color_groups=image_result.buckets,
+        canonical_hsl=image_result.canonical_hsl,
+        lab_centroids=image_result.centroids,  # the durable §4 asset — always kept
+        coverage=round(min(sum(c.coverage for c in image_result.centroids), 1.0), 3),
+        confidence=0.4 if ambiguous else DEFAULT.confidence.image_only_confidence,
         needs_review=ambiguous,
     )
 
     if ambiguous:
-        existing = db.get_queued(material_id)
+        existing = db.get_queued(key)
         if existing is not None:
             db.REVIEW_QUEUE.remove(existing)
         db.REVIEW_QUEUE.append(record)
     else:
-        db.COLOR_RECORDS[material_id] = record
+        db.COLOR_RECORDS[key] = record
     return record
 
 
-def _lab_of(lab: tuple[float, float, float]) -> LabColor:
-    """ClusterResult's (L, a, b) tuple -> LabColor (L clamped to valid range)."""
-    L, a, b = lab
-    return LabColor(L=min(max(L, 0.0), 100.0), a=a, b=b)
+def _strategy() -> KMeansSweep:
+    cfg = DEFAULT.clustering
+    return KMeansSweep(
+        k_max=cfg.k_max, solid_delta_e=cfg.solid_delta_e,
+        silhouette_sample=cfg.silhouette_sample, seed=cfg.seed,
+    )
 
 
-# Static frontend — mounted LAST so /search and /api/* win. html=True serves
-# index.html at /.
+# Static mounts LAST so /search and /api/* win. Swatch images are served from
+# the fixtures dir (the mock stand-in for R2) — db.to_search_item builds
+# image_url against this mount. html=True serves index.html at /.
+app.mount("/swatches", StaticFiles(directory="fixtures/images"), name="swatches")
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True))

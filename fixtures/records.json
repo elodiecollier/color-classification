@@ -3,5 +3,27 @@
   {"material_id": "m2", "swatch_id": "s2", "swatch_name": "Fall River Glaze", "company": "Sun Mountain Door", "image_ref": "terracotta_solid.png"},
   {"material_id": "m3", "swatch_id": "s3", "swatch_name": "Ocean Blue", "company": "AquaTile", "image_ref": "checkerboard.png"},
   {"material_id": "m4", "swatch_id": "s4", "swatch_name": "Forest Canopy", "company": "GreenBuild Co"},
-  {"material_id": "m5", "swatch_id": "s5"}
+  {"material_id": "m5", "swatch_id": "s5"},
+
+  {"material_id": "Merpeople1", "swatch_id": "s6", "swatch_name": "Navy/Ivory", "company": "Chasing Paper", "image_ref": "merpeople navy ivory.png"},
+  {"material_id": "Merpeople2", "swatch_id": "s7", "swatch_name": "Black & White", "company": "Chasing Paper", "image_ref": "merpeople black white.png"},
+  
+  {"material_id": "Reeling1", "swatch_id": "s8", "swatch_name": "Avocado", "company": "Past Forward", "image_ref": "Reeling Avocado.png"},
+  {"material_id": "Reeling2", "swatch_id": "s9", "swatch_name": "Pebble", "company": "Past Forward", "image_ref": "Reeling Pebble.png"},
+  {"material_id": "Reeling3", "swatch_id": "s10", "swatch_name": "Sapphire", "company": "Past Forward", "image_ref": "Reeling Sapphire.png"},
+  {"material_id": "Reeling4", "swatch_id": "s11", "swatch_name": "Spice", "company": "Past Forward", "image_ref": "Reeling Spice.png"},
+
+  {"material_id": "Venetian Floral Bespoke Mural1", "swatch_id": "s12", "swatch_name": "Normal", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural.png"},
+  {"material_id": "Venetian Floral Bespoke Mural2", "swatch_id": "s13", "swatch_name": "Rose", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Rose.png"},
+  {"material_id": "Venetian Floral Bespoke Mural3", "swatch_id": "s14", "swatch_name": "Verde", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Verde.png"},
+  {"material_id": "Venetian Floral Bespoke Mural4", "swatch_id": "s15", "swatch_name": "Midnight", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Midnight.png"},
+
+  {"material_id": "Centre Swinging Door1", "swatch_id": "s16", "swatch_name": "Ash", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Ash.png"},
+  {"material_id": "Centre Swinging Door2", "swatch_id": "s17", "swatch_name": "Brushed Steel", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Brushed Steel.png"},
+  {"material_id": "Centre Swinging Door3", "swatch_id": "s18", "swatch_name": "Milano", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Milano.png"},
+  {"material_id": "Centre Swinging Door4", "swatch_id": "s19", "swatch_name": "Natural Teak", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Natural Teak.png"},
+  {"material_id": "Centre Swinging Door5", "swatch_id": "s20", "swatch_name": "Sapele", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Sapele.png"},
+  {"material_id": "Centre Swinging Door6", "swatch_id": "s21", "swatch_name": "Timber", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Timber.png"},
+  {"material_id": "Centre Swinging Door7", "swatch_id": "s22", "swatch_name": "White Maple", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door White Maple.png"}
+  
 ]
