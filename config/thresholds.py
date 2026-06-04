@@ -74,21 +74,28 @@ class BucketingThresholds(BaseModel):
     )
 
 
+class ConfidenceThresholds(BaseModel):
+    """Confidence cutoffs for the name signal + reconciliation (CLAUDE.md §6, §9)."""
+
+    model_config = _FROZEN
+
+    name_intuitive_floor: float = Field(
+        default=0.5, ge=0.0, le=1.0,
+        description="Name-analysis confidence below this counts as 'not intuitive' "
+                    "-> fall through to the image (§6 step 1). Applied by reconcile.",
+    )
+
+
 class Thresholds(BaseModel):
     """Top-level tunable config. Compose new nested sections here per workstream."""
 
     model_config = _FROZEN
 
     bucketing: BucketingThresholds = BucketingThresholds()
-    clustering: ClusteringThresholds = ClusteringThresholds()
+    confidence: ConfidenceThresholds = ConfidenceThresholds()
     # TODO (CV workstream): clustering: ClusteringThresholds
     #   downscale max edge ~200px; k-sweep range (1..6); min coverage % to
     #   survive; ΔE merge distance (closer merges; farther must NOT — checkerboard).
-    # TODO (reconcile workstream): confidence: ConfidenceThresholds
-    #   name-confidence floor (-> "not intuitive", fall through to image);
-    #   agreement/conflict confidence values; needs_review cutoff.
-
-    confidence: ConfidenceThresholds = ConfidenceThresholds()
 
 
 DEFAULT = Thresholds()

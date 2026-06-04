@@ -1,25 +1,92 @@
-"""Swatch NAME -> bucket(s) + confidence, via Gemini (CLAUDE.md §6, §9).
+"""Swatch NAME -> bucket(s) + confidence (CLAUDE.md §6 step 1, §9).
 
-The cheap pre-check, run only when a record has a name. Gemini handles
-LANGUAGE only — "is this name intuitively a color?":
-  - descriptive names resolve here ("Sage" -> green, high confidence)
-  - non-intuitive names ("Fall River Glaze") return LOW confidence and the
-    flow falls through to the image pipeline (which is authoritative anyway
-    whenever an image exists).
+Gemini handles LANGUAGE only — "is this name intuitively a color?". Descriptive
+names ("Sage" -> green) resolve with high confidence; opaque marketing names
+("Fall River Glaze") come back with low confidence and/or no buckets, and the
+flow falls through to the (authoritative) image pipeline.
 
-Contract with the model (strict, defensive):
-  - Prompt demands STRICT JSON: color_group(s) chosen ONLY from the fixed
-    §5 taxonomy, plus confidence 0-1. Schema enforced via core/gemini.py
-    structured output.
-  - Parse failure or out-of-taxonomy output is NOT an error to retry into
-    submission: treat as low confidence -> review queue (§9).
+Pure logic: build the prompt, call an INJECTED `ports.llm.LLMClient`, then parse
++ validate against the fixed 10 buckets. No SDK import here -> unit-testable with
+a fake client (no API key). Defensive per §9: a parse failure or out-of-taxonomy
+output is never fatal — it just yields no/low signal.
 
-Will expose:
-  - analyze_name(name, client, config) -> NameAnalysisResult
-
-Salvage note: the discarded spike at
-acelab-hatchet-workers/experiments/color_classification/ has working Gemini
-name-analysis code to adapt (its image-color approach is superseded; ignore
-that part). Prompt-style reference:
-product-scraping/src/scraper/classifier/engine.py + data/prompts/*.yaml.
+Semantics: an empty `buckets` means "no usable color from the name" regardless of
+confidence; callers (reconcile) should fall through to the image in that case.
+The confidence is compared to `config.confidence.name_intuitive_floor`
+downstream — not here.
 """
+
+from __future__ import annotations
+
+import json
+
+from core.models import ColorBucket, NameAnalysisResult
+from ports.llm import LLMClient
+
+_ALLOWED = ", ".join(b.value for b in ColorBucket)
+
+_SYSTEM = (
+    "You map a building-product color NAME to standard color buckets.\n"
+    f"Allowed buckets (use ONLY these exact words): {_ALLOWED}.\n"
+    "A name may map to one or more buckets, or to none if it does not "
+    "intuitively convey a color.\n"
+    'Respond with STRICT JSON only: {"buckets": ["<bucket>", ...], '
+    '"confidence": <number 0..1>}.\n'
+    "- buckets: only values from the allowed list; use [] when the name conveys "
+    "no intuitive color.\n"
+    "- confidence: your certainty that the name intuitively denotes those colors. "
+    'Descriptive names ("Sage", "Forest Green") -> high; opaque marketing names '
+    '("Fall River Glaze") -> low.\n'
+    "No prose — a JSON object only."
+)
+
+
+def analyze_name(
+    name: str | None,
+    client: LLMClient,
+    *,
+    company: str | None = None,
+) -> NameAnalysisResult:
+    """Classify a swatch name into color buckets + a confidence (0-1)."""
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return NameAnalysisResult(buckets=[], confidence=0.0)
+
+    user = f"Color name: {cleaned!r}"
+    if company:
+        user += f"\nManufacturer: {company}"
+
+    try:
+        raw = client.complete_json(system=_SYSTEM, user=user)
+        data = json.loads(raw)
+    except Exception:
+        # transport error or non-JSON output -> no usable signal (§9)
+        return NameAnalysisResult(buckets=[], confidence=0.0)
+
+    return NameAnalysisResult(
+        buckets=_validate_buckets(data.get("buckets")),
+        confidence=_clamp01(data.get("confidence")),
+    )
+
+
+def _validate_buckets(raw: object) -> list[ColorBucket]:
+    """Keep only valid, deduped buckets; silently drop anything out-of-taxonomy."""
+    if not isinstance(raw, list):
+        return []
+    out: list[ColorBucket] = []
+    for value in raw:
+        try:
+            bucket = ColorBucket(str(value).strip().lower())
+        except ValueError:
+            continue
+        if bucket not in out:
+            out.append(bucket)
+    return out
+
+
+def _clamp01(raw: object) -> float:
+    try:
+        value = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    return min(max(value, 0.0), 1.0)

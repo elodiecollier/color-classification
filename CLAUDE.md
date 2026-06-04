@@ -61,11 +61,11 @@ hooks come later.
 | Decision | Why |
 |---|---|
 | **Search = discrete color buckets** (the 10 below), term→group exact match | Simple, self-contained, explainable; directly serves "green → sage/lime"; no embedding infra or external Search API. Search is only a demo. |
-| **No embeddings / no external Search API / no OpenRouter** this phase | Not needed once search is buckets. Keeps the repo self-contained. |
+| **No embeddings / no external Search API** this phase | Search is buckets, not vector similarity — keeps the repo self-contained. |
 | **Extraction: name→Gemini when intuitive, else image→LAB clustering** | Right tool per job: LLM for language, deterministic CV for perceptual color. |
 | **Image pipeline is authoritative when a swatch image exists**; name is a cheap pre-check / corroboration | Names lie ("Fall River Glaze"); pixels don't. |
 | **Reconcile name vs image; conflicts → review queue** (never silently pick) | Two independent signals cross-checked = trustworthy output + a triage path for hard cases. |
-| **Gemini only** (reuse existing client) for the name call | We're standardized on Gemini; don't add a provider abstraction unless fallback is explicitly needed. |
+| **Name LLM = Gemini flash via the OpenRouter gateway**, behind a port | Standalone repo (no native Gemini client to reuse) and the key we have is OpenRouter — an OpenAI-compatible gateway that still reaches Gemini. The `openai` SDK lives in `adapters/llm/openrouter.py`; `core/` stays SDK-free + testable with a fake. |
 | **Local-file sink now; Directus write-back later**, sink swappable behind an interface | Prove it standalone; integration = swap the adapter, no pipeline changes. |
 | **Store raw `lab_centroids` even now** | Durable asset: enables future "similar color" LAB-distance search and survives taxonomy re-tuning. |
 
@@ -144,15 +144,23 @@ Flow:
 Keep the schema clean and the **sink swappable** so a Directus DB writer can
 replace the file writer later with no pipeline changes.
 
-## 9. LLM usage
+## 9. LLM usage (name analysis only)
 
-- **Reuse the existing Gemini client** for the name-analysis call only. Do **not**
-  introduce a separate provider abstraction (OpenRouter, etc.) this phase.
-- Prompt Gemini to return **strict JSON**: `color_group`(s) chosen ONLY from the
-  fixed §5 taxonomy + `confidence` 0–1. Parse defensively; parse failure or
-  out-of-taxonomy output → treat as low confidence → review queue.
-- (Existing pipeline model is cited as `gemini-2.5-flash`; the live extraction
-  code uses `gemini-3-flash-preview` — confirm which to use.)
+- The LLM is used for the **swatch *name*** only (the "language" half of §3) —
+  never for image color.
+- **Provider: OpenRouter gateway → `google/gemini-2.5-flash`.** OpenRouter is
+  OpenAI-compatible, so `adapters/llm/openrouter.py` uses the `openai` SDK pointed
+  at `https://openrouter.ai/api/v1`, keyed by `OPENROUTER_API_KEY`. It implements
+  the `ports.llm.LLMClient` port; `core/name_analysis.py` takes a client as an
+  injected arg and never imports an SDK (so it's unit-testable with a fake — no
+  key needed). Model id is the single constant `DEFAULT_MODEL` in the adapter.
+- **Strict JSON, defensive parse:** request JSON-object mode and prompt for
+  `{"buckets": [...], "confidence": 0..1}` using ONLY the fixed §5 buckets.
+  Validate each bucket against `ColorBucket`; drop out-of-taxonomy values; a
+  parse/transport failure → no buckets + confidence 0. An empty `buckets` means
+  "no usable name signal" → fall through to the image (§6).
+- The confidence floor (`config.confidence.name_intuitive_floor`) is applied by
+  `reconcile`, not by `name_analysis`.
 
 ## 10. Search + demo UI
 
@@ -202,19 +210,21 @@ flag. Keep it minimal; it's a demo, not a product surface.
 color-classification/
   config/                # ALL thresholds: hue boundaries, achromatic cutoffs,
                          # brown rule, ΔE merge distance, coverage %, confidence cutoffs
-  core/                  # pure domain — NO external I/O
+  core/                  # pure domain — NO external I/O (no SDKs / CV deps)
     buckets.py           # HSL → bucket grouping (§5): achromatic-first, brown rule, hue bands
-    image_pipeline.py    # downscale → CIELAB → cluster → relevance filter → centroids → HSL
-    name_analysis.py     # Gemini name → bucket(s) + confidence (strict JSON)
+    image_pipeline.py    # cluster → relevance filter → centroids → buckets (injected strategy)
+    name_analysis.py     # swatch name → bucket(s) + confidence via an injected LLM client
     reconcile.py         # name vs image agreement → confidence / conflict → review
-    models.py            # the §8 color record schema
-    gemini.py            # thin reuse of the existing Gemini client idiom
+    models.py            # the §8 color record schema + value types
   ports/                 # the integration seam — interfaces only
     record_source.py     # read persisted records (ids, swatch name?, R2 key)
     color_sink.py        # write color records (file now, Directus later)
     image_store.py       # read swatch image bytes (R2; mock = local files)
     clustering.py        # swappable clustering algorithm
+    llm.py               # the name-analysis LLM client interface
   adapters/
+    clustering/          # k-means sweep + preprocess (numpy / sklearn / PIL)
+    llm/                 # OpenRouter client → Gemini flash (openai SDK)
     mock/                # NOW — file sink, local-image store, fixture record source
     r2/  directus/       # LATER — stubs for now
   fixtures/
@@ -265,8 +275,9 @@ frontend/UI. (The AI agent is a tool used within either lane.) `✅` = done.
 6. **[You]** `core/image_pipeline.py`: relevance filter + wire
    preprocess → cluster → `buckets_for_centroids` → `ImageAnalysisResult`; add the
    clustering/ΔE section of `config/thresholds.py`; `test_image_pipeline.py`.
-7. **[You]** `core/gemini.py` + `core/name_analysis.py`: name → bucket +
-   confidence (strict JSON); add the confidence section of config.
+7. `core/name_analysis.py` + `ports/llm.py` + `adapters/llm/openrouter.py`
+   (OpenRouter → Gemini flash): name → bucket + confidence (strict JSON);
+   confidence section of config. — ✅ done (live-verified)
 8. **[You]** `core/reconcile.py`: name vs image agreement → `ColorRecord`.
 9. **[You]** Mock data layer: the three ports + `adapters/mock/*` + `fixtures/`.
 10. **[You]** `cli/run_batch.py`: records → 3-way branch → image/name → reconcile
@@ -296,7 +307,7 @@ ports, and `ClusterResult` — so the two lanes run independently:
 |---|---|---|---|
 | **Frontend / demo UI** (`webapp/`) | Partner | §10 shape | ✅ built, on-contract |
 | **Image pipeline** (relevance filter + glue) | You | `ClusterResult` + buckets + `ImageAnalysisResult` | now |
-| **Name analysis** (Gemini) | You | `gemini` + `NameAnalysisResult` | now |
+| **Name analysis** (OpenRouter → Gemini) | You | `ports.llm` + `NameAnalysisResult` | ✅ built, live-verified |
 | **Mock data layer** (ports + `adapters/mock` + fixtures) | You | the ports + `MaterialRecord` | now |
 | **Integration adapters** (R2, Directus) | You | the ports | parallel, anytime |
 
@@ -342,8 +353,9 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
   pre-check can't run and we're **image-first** — which changes the branch logic.
 - The exact **source/format of the list of already-persisted records** to batch
   over (table / export / query), and how **R2 keys** are referenced on those rows.
-- A few real swatches (name + image) to tune the §5 thresholds against, plus
-  `GOOGLE_GENAI_API_KEY`.
+- A few real swatches (name + image) to tune the §5 thresholds against.
+  (`OPENROUTER_API_KEY` for the name LLM is available; stored as an env var /
+  gitignored `.env`, never committed.)
 - Whether a **neutral/beige** bucket is needed once tested on real materials.
 
 ## 17. Out of scope / do not use
@@ -354,17 +366,16 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 ## 18. Status
 
-In active build. **Done:** the bucketing module (§5); shared value types with
-`ClusterResult` unified into a single type (`core/models.py`); the config
-bucketing section; the clustering adapters (k-means sweep + preprocess); the full
-record + search-API schema (§8, §10); and a working demo `webapp/` (search +
-admin + review queue + a live `/api/classify` that runs the real pipeline),
-**aligned to the §10/§8 contract types** — `GET /search?color=` serves
-`SearchResponse`, classify/review speak `ColorRecord`. **38 tests pass.**
+In active build. **Done:** the bucketing module (§5); shared value types +
+schema (§8/§10); config (bucketing + confidence sections); the clustering
+adapters (k-means sweep + preprocess); **name analysis** (`core/name_analysis.py`
++ the `ports.llm` port + `adapters/llm/openrouter.py` → Gemini flash); and a demo
+`webapp/` (search + admin + review + live `/api/classify`) aligned to the §10/§8
+contract. **46 tests pass.**
 
-**Next — You (backend):** `image_pipeline` glue + `name_analysis`, then the mock
-data layer and `run_batch`. **Partner (UI):** `webapp/` is built; iterate on it.
-**Team:** the §10-contract-vs-webapp-shapes drift decision (§16).
+**Next — You (backend):** `image_pipeline` glue (relevance filter), then
+`reconcile`, the mock data layer, and `run_batch`. **Partner (UI):** `webapp/` is
+built and on-contract; iterate on it.
 
 **Open external item:** a real `company_colors` sample for `fixtures/` (§16) —
 needed before `run_batch` runs end-to-end on real data.
