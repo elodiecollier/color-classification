@@ -23,3 +23,30 @@ values and the agreement policy come from config/thresholds.py.
 Will expose:
   - reconcile(record, name_result, image_result, config) -> ColorRecord
 """
+
+from __future__ import annotations
+
+from config.thresholds import DEFAULT, Thresholds
+from core.models import (
+    ColorRecord,
+    ImageAnalysisResult,
+    MaterialRecord,
+    NameAnalysisResult,
+)
+
+def reconcile(
+    record: MaterialRecord,
+    name_result: NameAnalysisResult | None,
+    image_result: ImageAnalysisResult | None,
+    config: Thresholds = DEFAULT,
+) -> ColorRecord:
+    # TODO: narrow `config` to the ConfidenceThresholds section once it lands
+    # in config/thresholds.py (it holds the name-confidence floor, the
+    # agreement/conflict confidence values, and the needs_review cutoff).
+
+    # nothing
+    if not name_result and not image_result:
+        return None
+    
+    if name_result.confidence < config.confidence:
+        return 

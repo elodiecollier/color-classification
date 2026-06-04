@@ -80,12 +80,15 @@ class Thresholds(BaseModel):
     model_config = _FROZEN
 
     bucketing: BucketingThresholds = BucketingThresholds()
+    clustering: ClusteringThresholds = ClusteringThresholds()
     # TODO (CV workstream): clustering: ClusteringThresholds
     #   downscale max edge ~200px; k-sweep range (1..6); min coverage % to
     #   survive; ΔE merge distance (closer merges; farther must NOT — checkerboard).
     # TODO (reconcile workstream): confidence: ConfidenceThresholds
     #   name-confidence floor (-> "not intuitive", fall through to image);
     #   agreement/conflict confidence values; needs_review cutoff.
+
+    confidence: ConfidenceThresholds = ConfidenceThresholds()
 
 
 DEFAULT = Thresholds()
