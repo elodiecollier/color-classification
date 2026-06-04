@@ -353,6 +353,12 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
   pre-check can't run and we're **image-first** — which changes the branch logic.
 - The exact **source/format of the list of already-persisted records** to batch
   over (table / export / query), and how **R2 keys** are referenced on those rows.
+- **Are swatch images available locally, or only as R2 keys?** The mock
+  `LocalImageStore` reads local files. If the imported data carries only R2 keys
+  (no local images), the image pipeline goes dark → classification falls to
+  **name-only** (the LLM) — *unless* we add an **R2 `ImageStore` adapter** to
+  fetch images by key. This decides whether the next build is that adapter, so
+  confirm it before the real-data run.
 - A few real swatches (name + image) to tune the §5 thresholds against.
   (`OPENROUTER_API_KEY` for the name LLM is available; stored as an env var /
   gitignored `.env`, never committed.)
@@ -368,7 +374,7 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 ## 18. Status
 
-**The mock pipeline is END-TO-END COMPLETE** and **91 tests pass**: classify
+**The mock pipeline is END-TO-END COMPLETE** and **93 tests pass**: classify
 (`run_batch`) → `output/color_records.jsonl` → `core.search`, plus a demo
 `webapp/`, the `name_analysis` LLM step (OpenRouter → Gemini), and a `cli/eval`
 accuracy harness (92% on the synthetic labelled set; the one failure, beige →
