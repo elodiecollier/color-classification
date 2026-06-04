@@ -18,11 +18,15 @@ Building it standalone with mocks deliberately sidesteps external blockers (no
 Directus write access needed, no changes to the live pipeline). We classify the
 records we **already have** and prove out color search.
 
-**Two parts, unequal effort:**
-- **EXTRACTION** (the majority of the work): figure out the standard color(s) of
-  each swatch/record.
-- **SEARCH** (a thin demo feature): type "green", get back records that map to
-  green. Exists to *demonstrate* the extraction, not as production search.
+**Three parts, very unequal effort:**
+- **EXTRACTION** (the overwhelming majority of the work): figure out the standard
+  color(s) of each swatch/record.
+- **SEARCH** (thin): type "green", get back records that map to green — a small
+  bucket lookup over the extracted data.
+- **UI** (a demo front-end, now an explicit project goal): a simple web interface
+  over the search so the result is showable. Built against the search-API contract
+  (§10); it does not block the extraction work. Extraction remains the core goal —
+  search + UI are the demo layer that proves it out.
 
 ## 2. The problem (why this exists)
 
@@ -150,11 +154,39 @@ replace the file writer later with no pipeline changes.
 - (Existing pipeline model is cited as `gemini-2.5-flash`; the live extraction
   code uses `gemini-3-flash-preview` — confirm which to use.)
 
-## 10. Search demo
+## 10. Search + demo UI
 
-- Map the user's color term → bucket (reuse the name→group logic).
-- Return all records whose `color_groups` include it, reading from the output file.
-- CLI or a minimal endpoint is fine; **UI is out of scope.**
+Search is a thin lookup over the buckets; a small web UI makes the result
+showable. Both exist to *demonstrate* the extraction.
+
+**Search logic:** map the user's color term → bucket (reuse the name→group
+logic), then return all records whose `color_groups` include it, reading from the
+output file.
+
+**Search API (the front/back contract).** A minimal FastAPI endpoint —
+`GET /search?color=<term>` → `SearchResponse` (defined in `core/models.py`). The
+response shape below is what the UI builds against, so the front-end can be
+developed in parallel against a stub with zero backend dependency:
+
+```json
+{
+  "query": "green",
+  "bucket": "green",
+  "count": 1,
+  "results": [
+    { "material_id": "m1", "swatch_id": "s1", "swatch_name": "Sage",
+      "company": "Acme", "image_url": "https://.../swatch.jpg",
+      "color_groups": ["green"], "canonical_hsl": { "h": 120, "s": 0.4, "l": 0.5 },
+      "confidence": 0.9, "needs_review": false } ]
+}
+```
+
+`color_groups` values are always one of the fixed §5 buckets; `canonical_hsl`
+lets the UI render a color chip even before real swatch images are wired.
+
+**UI:** a simple front-end (`frontend/`) that calls `/search` and renders the
+results — color chip from `canonical_hsl`, swatch name, company, image, and a
+`needs_review` flag. Keep it minimal; it's a demo, not a product surface.
 
 ## 11. Repo layout (intended)
 
@@ -181,10 +213,15 @@ color-classification/
   cli/
     run_batch.py         # batch over records: 3-way branch, file sink + review queue
     search.py            # term → bucket → records from the output file
+  api/
+    main.py              # FastAPI: GET /search?color=<term> -> SearchResponse (§10)
+  frontend/              # the demo UI (partner's lane) — calls the search API
   tests/
 ```
 Keep `core/` free of external dependencies; all I/O behind `ports/`. Swappable
-behind interfaces: the clustering algorithm and the file/DB sink.
+behind interfaces: the clustering algorithm and the file/DB sink. The search API
+(`api/`, FastAPI + uvicorn) and the `frontend/` UI are thin demo layers over the
+search — they depend on the §10 contract, not on `core/` internals.
 
 ## 12. Mocking the data layer (concrete)
 
@@ -202,58 +239,65 @@ Because each sits behind a port, **integration = writing `adapters/r2/*`,
 
 ## 13. Build order (step by step)
 
-Ownership tags: **[You]** = human contributor, **[Claude]** = agent.
+Ownership: **[You]** = Elodie (backend: extraction + search) · **[Partner]** =
+frontend/UI. (The AI agent is a tool used within either lane.) `✅` = done.
 
 ### Phase 0 — Ground & scaffold
-1. **[You]** Confirm data inputs (see §16): source/format of the records to batch
-   over, whether the swatch **name** is queryable this phase, how R2 keys are
-   referenced. Provide a few real swatches (name + image) + `GOOGLE_GENAI_API_KEY`.
-2. **[Claude]** Scaffold repo + the **one config file** (§11).
-3. **[Claude]** **HSL bucketing module** (`buckets.py`) — config-driven, testable
-   in isolation against synthetic colors (incl. the brown + achromatic rules).
+1. **[You]** Confirm data inputs (§16): record source/format, whether the swatch
+   **name** is queryable this phase, how R2 keys are referenced. Provide a few
+   real swatches (name + image) + `GOOGLE_GENAI_API_KEY`. — *open*
+2. Scaffold repo + the **one config file**. — ✅
+3. **HSL bucketing module** (`buckets.py`), config-driven + synthetic-color tests. — ✅
+4. **Shared record + API schema** (`core/models.py`) — the §8/§10 contract every
+   lane builds against; `ClusterResult` unified into one type. — ✅
 
-### Phase 1 — Extraction (the bulk)
-4. **[Claude]** **Image color pipeline** (`image_pipeline.py`): LAB → cluster →
-   relevance filter → HSL. Tune against hard cases: checkerboard, gradients,
-   multi-tone.
-5. **[Claude]** **Name pre-check** (`name_analysis.py`) via the existing Gemini
-   client → bucket + confidence (strict JSON).
-6. **[Claude]** **Reconciliation** (`reconcile.py`): name vs image agreement;
-   conflict → review.
-7. **[Claude]** **Batch runner** (`cli/run_batch.py`) over persisted records with
-   the 3-way branch; local file sink + review-queue output.
-8. **[You + Claude]** Run on real swatches; tune the §5 config thresholds.
+### Phase 1 — Extraction (the bulk) — *You*
+5. Clustering: `kmeans_sweep` + `preprocess`. — ✅ (done by partner before UI pivot)
+6. **[You]** `core/image_pipeline.py`: relevance filter + wire
+   preprocess → cluster → `buckets_for_centroids` → `ImageAnalysisResult`; add the
+   clustering/ΔE section of `config/thresholds.py`; `test_image_pipeline.py`.
+7. **[You]** `core/gemini.py` + `core/name_analysis.py`: name → bucket +
+   confidence (strict JSON); add the confidence section of config.
+8. **[You]** `core/reconcile.py`: name vs image agreement → `ColorRecord`.
+9. **[You]** Mock data layer: the three ports + `adapters/mock/*` + `fixtures/`.
+10. **[You]** `cli/run_batch.py`: records → 3-way branch → image/name → reconcile
+    → sink. Then run on real swatches and tune the §5 thresholds.
 
-### Phase 2 — Search demo
-9. **[Claude]** `cli/search.py`: term → bucket → records from the output file.
+### Phase 2 — Search + demo UI
+11. **[You]** `cli/search.py` (term → bucket → records), then `api/main.py`
+    (`GET /search` → `SearchResponse`).
+12. **[Partner]** the `frontend/` UI against the §10 contract — can start **now**
+    against a stubbed response; no backend dependency.
 
 ### Phase 3 — Tests & eval
-10. **[Claude]** Unit tests for `buckets`/pipeline/reconcile (synthetic colors +
-    mocked Gemini); accuracy spot-check on records where ground truth exists.
+13. **[You]** Unit tests across the lanes + an accuracy spot-check on records with
+    known colors. **[Partner]** UI sanity once wired to the live API.
 
 ### Phase 4 — Integration (later; see §15)
-11. **[You]** Resolve ownership for Directus write-back and the inline pipeline hook.
-12. **[Claude]** Implement `adapters/r2/*` + `adapters/directus/*` against the
-    ports; design the classify step as a callable that drops into a post-persist
-    stage on new `Swatch` rows.
+14. **[You]** Resolve Directus write-back + inline-pipeline-hook ownership.
+15. **[You]** `adapters/r2/*` + `adapters/directus/*` against the ports; design
+    the classify step as a post-persist hook on new `Swatch` rows.
 
 ## 14. Parallel workstreams (who can work on what)
 
-Lock the contracts first — the **§8 schema** + the port signatures (`record_source`,
-`color_sink`, `image_store`, `clustering`). Then:
+The contracts are now locked — the §8 records, the §10 search-API shape, the
+ports, and `ClusterResult` — so the two lanes run independently:
 
-| Stream | Scope | Depends only on | Can start |
+| Stream | Owner | Depends on | Status / can start |
 |---|---|---|---|
-| **A. Bucketing + config** | `buckets.py`, the config constant | §5 + schema | immediately (synthetic colors) |
-| **B. Image CV pipeline** | clustering, relevance filter, LAB→HSL | `clustering` port + buckets | after buckets |
-| **C. Name analysis** | Gemini name → bucket + confidence | schema + Gemini | immediately |
-| **D. Mock data layer** | fixtures, file sink, local image store | the three ports | immediately |
-| **E. Search demo** | term → bucket → records | schema + an output file | after buckets (synthetic output OK) |
-| **F. Integration adapters** | R2, Directus | the ports | parallel, anytime |
+| **Frontend / demo UI** | Partner | §10 search-API response shape | now — against a stub |
+| **Image pipeline** (relevance filter + glue) | You | `ClusterResult` + buckets + `ImageAnalysisResult` | now |
+| **Name analysis** (Gemini) | You | `gemini` + `NameAnalysisResult` | now |
+| **Mock data layer** (ports + `adapters/mock` + fixtures) | You | the ports + `MaterialRecord` | now |
+| **Search logic + API** (`cli/search`, `api/main`) | You | `SearchResponse` + an output file | after search logic |
+| **Integration adapters** (R2, Directus) | You | the ports | parallel, anytime |
 
-Bucketing (A) is the spine — B and E both depend on it, so do it first. A, C, D
-can all start at once. Main risk: churn in the §5 taxonomy or §8 schema, so
-stabilize those early.
+**The clean seam: front-end and back-end never touch each other's internals** —
+they meet only at the `GET /search` → `SearchResponse` contract (§10). So your
+partner builds the whole UI against a stubbed response while you build the
+pipeline. Within the backend, the name and image lanes meet only at
+`reconcile`/`run_batch`. Main risk to parallelism: churn in the §8 schema or the
+§10 API shape — both locked, so agree changes before making them.
 
 ## 15. External systems & integration targets (reference)
 
@@ -302,9 +346,18 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 ## 18. Status
 
-Planning complete; reconciled from both partners' plans. **No application code in
-this repo yet.** Next: Phase 0 → scaffold + the config file + the bucketing module
-(testable on synthetic colors). A discarded earlier spike (Gemini-vision color +
-embeddings) lives at `acelab-hatchet-workers/experiments/color_classification/`;
-its Gemini name-analysis code can be salvaged for `core/name_analysis.py`, but its
-image-color approach is superseded by §7.
+In active build. **Done:** the bucketing module (§5); shared value types with
+`ClusterResult` unified into a single type (`core/models.py`); the config
+bucketing section; the clustering adapters (k-means sweep + preprocess); and the
+full record + search-API schema (§8, §10). **38 tests pass.**
+
+**Next — You (backend):** `image_pipeline` glue + `name_analysis`, then the mock
+data layer and `run_batch`, then `cli/search` + `api/main`. **Partner (UI):** the
+`frontend/` demo against the §10 contract (can start now against a stub).
+
+**Open external item:** a real `company_colors` sample for `fixtures/` (§16) —
+needed before `run_batch` runs end-to-end on real data.
+
+A discarded early spike (Gemini-vision color + embeddings) lives at
+`acelab-hatchet-workers/experiments/color_classification/`; its name-analysis code
+is salvageable, but its image-color approach is superseded by §7.

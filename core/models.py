@@ -83,11 +83,116 @@ class ClusterResult:
 
 Source = Literal["name", "image", "reconciled", "manual"]
 
-# TODO (data/source workstream): MaterialRecord — one already-persisted row to
-#   classify (material_id, optional swatch name, optional R2 key / mock path).
-# TODO (name workstream): NameAnalysisResult — bucket(s) + confidence (0-1).
-# TODO (CV workstream): ImageAnalysisResult — surviving centroids + their buckets.
-# TODO (reconcile workstream): ColorRecord — the full §8 output record
-#   (material_id, swatch_id?, source, color_groups: list[ColorBucket],
-#    canonical_hsl, lab_centroids, coverage, confidence, needs_review,
-#    conflict_reason?). Keep sink-agnostic.
+
+# --- INPUT: one already-persisted row to classify --------------------------
+class MaterialRecord(BaseModel):
+    """One record to classify, mirroring a persisted Directus row.
+
+    PROVISIONAL shape — confirmed once we have a real `company_colors` sample
+    (CLAUDE.md §16). Fixtures must match whatever this becomes.
+    """
+
+    model_config = _FROZEN
+
+    material_id: str = Field(description="Stable id of the material/product record")
+    swatch_id: str | None = Field(default=None, description="Id of the specific swatch, if any")
+    swatch_name: str | None = Field(
+        default=None, description="Manufacturer's color name, e.g. 'Fall River Glaze'"
+    )
+    company: str | None = Field(
+        default=None, description="Manufacturer name — context for name analysis"
+    )
+    image_ref: str | None = Field(
+        default=None, description="Swatch image reference: R2 key (real) or local path (mock)"
+    )
+
+
+# --- INTERMEDIATE: per-signal analysis results -----------------------------
+class NameAnalysisResult(BaseModel):
+    """Gemini's read of the swatch NAME (CLAUDE.md §6 step 1)."""
+
+    model_config = _FROZEN
+
+    buckets: list[ColorBucket] = Field(
+        default_factory=list, description="Bucket(s) the name maps to; empty if none/unsure"
+    )
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="0-1; below the config floor counts as 'not intuitive'"
+    )
+
+
+class ImageAnalysisResult(BaseModel):
+    """The deterministic image pipeline's output (CLAUDE.md §6 step 2)."""
+
+    model_config = _FROZEN
+
+    buckets: list[ColorBucket] = Field(
+        default_factory=list, description="Surviving centroids' buckets, coverage-ordered"
+    )
+    centroids: list[ClusterResult] = Field(
+        default_factory=list,
+        description="Surviving LAB centroids + coverage (post relevance-filter)",
+    )
+    canonical_hsl: HSL | None = Field(
+        default=None, description="HSL of the dominant (highest-coverage) centroid"
+    )
+
+
+# --- OUTPUT: the sink-agnostic color record (CLAUDE.md §8) ------------------
+class ColorRecord(BaseModel):
+    """The enriched result written to the sink (local file now, Directus later)."""
+
+    model_config = _FROZEN
+
+    material_id: str
+    swatch_id: str | None = None
+    source: Source = Field(description="Which signal produced this result")
+    color_groups: list[ColorBucket] = Field(default_factory=list)
+    canonical_hsl: HSL | None = None
+    lab_centroids: list[ClusterResult] = Field(
+        default_factory=list,
+        description="Durable raw centroids — kept even now for future similar-color search (§4)",
+    )
+    coverage: float | None = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Fraction of the swatch explained by color_groups; None for name-only",
+    )
+    confidence: float = Field(ge=0.0, le=1.0)
+    needs_review: bool = False
+    conflict_reason: str | None = Field(
+        default=None, description="Set only when name and image disagree (§6 step 3)"
+    )
+
+
+# --- SEARCH / API: the front-end contract (UI builds against this) ----------
+# Served by the search demo, e.g. GET /search?color=green -> SearchResponse.
+class SearchResultItem(BaseModel):
+    """One swatch in a search response — a UI-facing view of a ColorRecord
+    joined with display fields from its source MaterialRecord."""
+
+    model_config = _FROZEN
+
+    material_id: str
+    swatch_id: str | None = None
+    swatch_name: str | None = None
+    company: str | None = None
+    image_url: str | None = Field(
+        default=None, description="Displayable image URL (backend resolves the R2 key/path)"
+    )
+    color_groups: list[ColorBucket] = Field(default_factory=list)
+    canonical_hsl: HSL | None = None
+    confidence: float
+    needs_review: bool = False
+
+
+class SearchResponse(BaseModel):
+    """Response body for the color-search endpoint."""
+
+    model_config = _FROZEN
+
+    query: str = Field(description="The raw term searched, e.g. 'green'")
+    bucket: ColorBucket | None = Field(
+        default=None, description="Bucket the term mapped to; None if unmapped"
+    )
+    count: int
+    results: list[SearchResultItem] = Field(default_factory=list)
