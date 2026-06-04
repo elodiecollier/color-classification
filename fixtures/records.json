@@ -1,0 +1,7 @@
+[
+  {"material_id": "m1", "swatch_id": "s1", "swatch_name": "Sage Mist", "company": "GreenBuild Co", "image_ref": "sage_solid.png"},
+  {"material_id": "m2", "swatch_id": "s2", "swatch_name": "Fall River Glaze", "company": "Sun Mountain Door", "image_ref": "terracotta_solid.png"},
+  {"material_id": "m3", "swatch_id": "s3", "swatch_name": "Ocean Blue", "company": "AquaTile", "image_ref": "checkerboard.png"},
+  {"material_id": "m4", "swatch_id": "s4", "swatch_name": "Forest Canopy", "company": "GreenBuild Co"},
+  {"material_id": "m5", "swatch_id": "s5"}
+]
