@@ -19,12 +19,13 @@ section { margin-bottom: 36px; }
 h2 { font-size: 17px; }
 
 /* search */
-.hero { text-align: center; margin: 28px 0; }
-#search-form { display: flex; gap: 8px; justify-content: center; }
+.hero { text-align: left; margin: 28px 0; }
+#search-form { display: flex; gap: 8px; justify-content: left; }
 #search-input { width: 360px; padding: 10px 14px; font-size: 16px;
   border: 1px solid #cfd4db; border-radius: 10px; }
-button[type="submit"], .btn { padding: 10px 16px; font-size: 14px; border: none;
+button[type="submit"], .btn { padding: 10px 16px; font-size: 14px; border-width: 1px; border-color: #1d2025;
   border-radius: 10px; background: #1d2025; color: #fff; cursor: pointer; }
+.btn:hover { background: transparent; color: #1d2025; }
 .btn.secondary { background: #e3e6ea; color: #1d2025; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }

@@ -188,13 +188,13 @@ lets the UI render a color chip even before real swatch images are wired.
 chip from `canonical_hsl`, swatch name, company, image, and a `needs_review`
 flag. Keep it minimal; it's a demo, not a product surface.
 
-> **Current state / drift (decision pending — §16):** the demo `webapp/` is built
-> and working, but uses its **own** shapes rather than the contract above:
-> `GET /api/search?q=<term>` → `{query, bucket, matched_via, products:[…]}` with
-> color buckets as plain-string `tags`, plus `/api/classify` (live pipeline),
-> `/api/review`, and `/api/products`. The `SearchResponse`/`SearchResultItem`
-> contract above remains the intended target; whether to align the webapp to it
-> is a decision the team will make.
+> **Current state: ALIGNED.** The demo `webapp/` serves exactly this contract:
+> `GET /search?color=<term>` → `SearchResponse` (types imported from
+> `core/models.py`). Its demo-only admin endpoints (`/api/products`, `/api/review`,
+> `/api/classify`) are not part of the contract but are composed strictly from the
+> contract types — `SearchResultItem`, `MaterialRecord`, and §8 `ColorRecord`
+> (review queue = `ColorRecord`s with `needs_review=True`; classify returns a
+> `ColorRecord`). No webapp-local shapes remain.
 
 ## 11. Repo layout (intended)
 
@@ -230,9 +230,7 @@ color-classification/
 Keep `core/` free of external dependencies; all I/O behind `ports/`. Swappable
 behind interfaces: the clustering algorithm and the file/DB sink. The demo lives
 in `webapp/` (FastAPI + uvicorn serving a static UI) — a thin layer that calls
-`core/` + the clustering adapter. NOTE: it currently uses its own simplified
-shapes (string `tags`, an in-memory product table) that diverge from the §10
-`SearchResponse` contract — reconciliation is an open decision (§16).
+`core/` + the clustering adapter, fully on the §10/§8 contract types.
 
 ## 12. Mocking the data layer (concrete)
 
@@ -276,10 +274,9 @@ frontend/UI. (The AI agent is a tool used within either lane.) `✅` = done.
 
 ### Phase 2 — Search + demo UI
 11. **[Partner]** the demo `webapp/` — search, admin tags, review queue, and a
-    live `/api/classify` that runs the real pipeline. — ✅ built (uses its own
-    shapes; see the §10 drift note).
-12. **[You/team]** decide whether to align `webapp/` to the §10 `SearchResponse`
-    contract (and, if so, expose it via `cli/search.py`). — *pending*
+    live `/api/classify` that runs the real pipeline. — ✅ built.
+12. **[Partner]** align `webapp/` to the §10 `SearchResponse` / §8 `ColorRecord`
+    contract. — ✅ done (no webapp-local shapes remain).
 
 ### Phase 3 — Tests & eval
 13. **[You]** Unit tests across the lanes + an accuracy spot-check on records with
@@ -297,7 +294,7 @@ ports, and `ClusterResult` — so the two lanes run independently:
 
 | Stream | Owner | Depends on | Status / can start |
 |---|---|---|---|
-| **Frontend / demo UI** (`webapp/`) | Partner | §10 shape (or its own) | ✅ built (own shapes — drift TBD) |
+| **Frontend / demo UI** (`webapp/`) | Partner | §10 shape | ✅ built, on-contract |
 | **Image pipeline** (relevance filter + glue) | You | `ClusterResult` + buckets + `ImageAnalysisResult` | now |
 | **Name analysis** (Gemini) | You | `gemini` + `NameAnalysisResult` | now |
 | **Mock data layer** (ports + `adapters/mock` + fixtures) | You | the ports + `MaterialRecord` | now |
@@ -348,10 +345,6 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 - A few real swatches (name + image) to tune the §5 thresholds against, plus
   `GOOGLE_GENAI_API_KEY`.
 - Whether a **neutral/beige** bucket is needed once tested on real materials.
-- **Webapp contract drift:** align the demo `webapp/` to the §10
-  `SearchResponse`/`ColorRecord` contract, or keep its simplified demo shapes
-  (string `tags`, in-memory product table) and adapt the real pipeline output to
-  it later? (Team decision.)
 
 ## 17. Out of scope / do not use
 
@@ -365,8 +358,9 @@ In active build. **Done:** the bucketing module (§5); shared value types with
 `ClusterResult` unified into a single type (`core/models.py`); the config
 bucketing section; the clustering adapters (k-means sweep + preprocess); the full
 record + search-API schema (§8, §10); and a working demo `webapp/` (search +
-admin + review queue + a live `/api/classify` that runs the real pipeline). **38
-tests pass.** (`/api/classify` was fixed to the unified `ClusterResult`.)
+admin + review queue + a live `/api/classify` that runs the real pipeline),
+**aligned to the §10/§8 contract types** — `GET /search?color=` serves
+`SearchResponse`, classify/review speak `ColorRecord`. **38 tests pass.**
 
 **Next — You (backend):** `image_pipeline` glue + `name_analysis`, then the mock
 data layer and `run_batch`. **Partner (UI):** `webapp/` is built; iterate on it.
