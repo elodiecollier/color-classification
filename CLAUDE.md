@@ -216,6 +216,7 @@ color-classification/
     name_analysis.py     # swatch name → bucket(s) + confidence via an injected LLM client
     reconcile.py         # name vs image agreement → confidence / conflict → review
     models.py            # the §8 color record schema + value types
+    search.py            # term → bucket → matching records (pure; §10)
   ports/                 # the integration seam — interfaces only
     record_source.py     # read persisted records (ids, swatch name?, R2 key)
     color_sink.py        # write color records (file now, Directus later)
@@ -225,12 +226,14 @@ color-classification/
   adapters/
     clustering/          # k-means sweep + preprocess (numpy / sklearn / PIL)
     llm/                 # OpenRouter client → Gemini flash (openai SDK)
-    mock/                # NOW — file sink, local-image store, fixture record source
+    mock/                # file sink, local-image store, fixture source,
+                         #   jsonl_color_source (reads run_batch output back)
     r2/  directus/       # LATER — stubs for now
-  fixtures/
+  fixtures/              # records.json (demo rows), images/ (swatches),
+                         #   eval_labels.json (labelled cases for cli/eval)
   cli/
-    run_batch.py         # batch over records: 3-way branch, file sink + review queue
-    search.py            # term → bucket → records from the output file
+    run_batch.py         # batch: records → image/name → reconcile → JSONL sink
+    eval.py              # accuracy harness over labelled swatches (§13)
   webapp/                # demo API + static UI (partner's lane), FastAPI-served
     main.py              # /api/search, /api/classify (live pipeline), review queue
     db.py                # in-memory mock product table for the demo
@@ -258,65 +261,62 @@ Because each sits behind a port, **integration = writing `adapters/r2/*`,
 
 ## 13. Build order (step by step)
 
-Ownership: **[You]** = Elodie (backend: extraction + search) · **[Partner]** =
-frontend/UI. (The AI agent is a tool used within either lane.) `✅` = done.
+Owners: **[E]** = Elodie · **[J]** = jessi. `✅` = done.
+**The mock/demo pipeline is END-TO-END COMPLETE** (classify → JSONL → search).
 
 ### Phase 0 — Ground & scaffold
-1. **[You]** Confirm data inputs (§16): record source/format, whether the swatch
-   **name** is queryable this phase, how R2 keys are referenced. Provide a few
-   real swatches (name + image) + `GOOGLE_GENAI_API_KEY`. — *open*
-2. Scaffold repo + the **one config file**. — ✅
-3. **HSL bucketing module** (`buckets.py`), config-driven + synthetic-color tests. — ✅
-4. **Shared record + API schema** (`core/models.py`) — the §8/§10 contract every
-   lane builds against; `ClusterResult` unified into one type. — ✅
+1. Real data inputs (§16): record format, name queryability, R2 keys. — *open (J gathering)*
+2. Scaffold + the one config file. — ✅
+3. HSL bucketing (`buckets.py`). — ✅
+4. Shared record + API schema (`core/models.py`; `ClusterResult` unified). — ✅
 
-### Phase 1 — Extraction (the bulk) — *You*
-5. Clustering: `kmeans_sweep` + `preprocess`. — ✅ (done by partner before UI pivot)
-6. **[You]** `core/image_pipeline.py`: relevance filter + wire
-   preprocess → cluster → `buckets_for_centroids` → `ImageAnalysisResult`; add the
-   clustering/ΔE section of `config/thresholds.py`; `test_image_pipeline.py`.
-7. `core/name_analysis.py` + `ports/llm.py` + `adapters/llm/openrouter.py`
-   (OpenRouter → Gemini flash): name → bucket + confidence (strict JSON);
-   confidence section of config. — ✅ done (live-verified)
-8. **[You]** `core/reconcile.py`: name vs image agreement → `ColorRecord`.
-9. **[You]** Mock data layer: the three ports + `adapters/mock/*` + `fixtures/`.
-10. **[You]** `cli/run_batch.py`: records → 3-way branch → image/name → reconcile
-    → sink. Then run on real swatches and tune the §5 thresholds.
+### Phase 1 — Extraction (the bulk)
+5. Clustering: `kmeans_sweep` + `preprocess`. — ✅
+6. **[E]** `image_pipeline.py` (ΔE76 relevance filter + glue) + clustering config. — ✅
+7. **[E]** `name_analysis` + `ports.llm` + `adapters/llm/openrouter` (→ Gemini flash). — ✅ live-verified
+8. **[J]** `reconcile.py` (name vs image → `ColorRecord`). — ✅
+9. **[E]** Mock data layer: 3 ports + `adapters/mock/*` + `fixtures/`. — ✅
+10. **[J]** `cli/run_batch.py` (records → image/name → reconcile → JSONL sink). — ✅
 
 ### Phase 2 — Search + demo UI
-11. **[Partner]** the demo `webapp/` — search, admin tags, review queue, and a
-    live `/api/classify` that runs the real pipeline. — ✅ built.
-12. **[Partner]** align `webapp/` to the §10 `SearchResponse` / §8 `ColorRecord`
-    contract. — ✅ done (no webapp-local shapes remain).
+11. **[J]** demo `webapp/` (search, admin, review, live classify), on the §10/§8 contract. — ✅
+12. **[E]** `core/search.py` + `adapters/mock/jsonl_color_source.py` (search `run_batch`'s output). — ✅
+13. **[J]** wire the webapp to `core.search` + `load_classified` so the UI searches
+    REAL output (not the `db.py` seed); dedup synonyms → `core.search.DEFAULT_SYNONYMS`. — *next*
 
 ### Phase 3 — Tests & eval
-13. **[You]** Unit tests across the lanes + an accuracy spot-check on records with
-    known colors. **[Partner]** UI sanity once wired to the live API.
+14. **[E]** `cli/eval.py` accuracy harness over labelled swatches. — ✅ (92% synthetic; beige→orange the one gap, §16)
+15. Tune thresholds against **real** swatches once they land. — *blocked on data (§16)*
 
 ### Phase 4 — Integration (later; see §15)
-14. **[You]** Resolve Directus write-back + inline-pipeline-hook ownership.
-15. **[You]** `adapters/r2/*` + `adapters/directus/*` against the ports; design
-    the classify step as a post-persist hook on new `Swatch` rows.
+16. **[J]** Resolve Directus write-back + inline-hook ownership.
+17. `adapters/r2/*` + `adapters/directus/*` against the ports; post-persist hook on new `Swatch` rows.
 
-## 14. Parallel workstreams (who can work on what)
+## 14. Workstreams (status)
 
-The contracts are now locked — the §8 records, the §10 search-API shape, the
-ports, and `ClusterResult` — so the two lanes run independently:
+Contracts (§8 records, §10 search shape, the ports, `ClusterResult`) are locked,
+and the mock pipeline is built end-to-end. Current state:
 
-| Stream | Owner | Depends on | Status / can start |
-|---|---|---|---|
-| **Frontend / demo UI** (`webapp/`) | Partner | §10 shape | ✅ built, on-contract |
-| **Image pipeline** (relevance filter + glue) | You | `ClusterResult` + buckets + `ImageAnalysisResult` | now |
-| **Name analysis** (OpenRouter → Gemini) | You | `ports.llm` + `NameAnalysisResult` | ✅ built, live-verified |
-| **Mock data layer** (ports + `adapters/mock` + fixtures) | You | the ports + `MaterialRecord` | now |
-| **Integration adapters** (R2, Directus) | You | the ports | parallel, anytime |
+| Stream | Owner | Status |
+|---|---|---|
+| Bucketing, schema, config | Elodie | ✅ |
+| Clustering (kmeans + preprocess) | Elodie | ✅ |
+| Image pipeline (`analyze_swatch`) | Elodie | ✅ |
+| Name analysis (OpenRouter → Gemini) | Elodie | ✅ live-verified |
+| Reconcile | jessi | ✅ |
+| Mock data layer (ports + adapters + fixtures) | Elodie | ✅ |
+| `run_batch` | jessi | ✅ |
+| Search (`core/search` + jsonl loader) | Elodie | ✅ |
+| Accuracy eval (`cli/eval`) | Elodie | ✅ |
+| Demo `webapp/` (on §10/§8 contract) | jessi | ✅ |
+| **Webapp ↔ real `run_batch` output** | jessi | **next** |
+| **Real `company_colors` data + tuning** | jessi | in progress |
+| Directus/R2 adapters + inline hook (Phase 4) | — | deferred |
 
-**The clean seam: front-end and back-end never touch each other's internals** —
-they meet only at the `GET /search` → `SearchResponse` contract (§10). So your
-partner builds the whole UI against a stubbed response while you build the
-pipeline. Within the backend, the name and image lanes meet only at
-`reconcile`/`run_batch`. Main risk to parallelism: churn in the §8 schema or the
-§10 API shape — both locked, so agree changes before making them.
+The clean seams still hold: front-end ↔ back-end meet only at `GET /search` →
+`SearchResponse` (§10); the name and image lanes meet only at `reconcile`/`run_batch`;
+`run_batch` (producer) and `search` (consumer) meet only at `color_records.jsonl`.
+Main risk: churn in the §8 schema or §10 shape — both locked, so agree before changing.
 
 ## 15. External systems & integration targets (reference)
 
@@ -356,7 +356,9 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 - A few real swatches (name + image) to tune the §5 thresholds against.
   (`OPENROUTER_API_KEY` for the name LLM is available; stored as an env var /
   gitignored `.env`, never committed.)
-- Whether a **neutral/beige** bucket is needed once tested on real materials.
+- Whether a **neutral/beige** bucket is needed — `cli/eval` already shows
+  beige → orange (a measured miss); gauge how common neutrals are on real
+  materials before adding a bucket or retuning the brown rule.
 
 ## 17. Out of scope / do not use
 
@@ -366,16 +368,23 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 ## 18. Status
 
-In active build. **Done:** the bucketing module (§5); shared value types +
-schema (§8/§10); config (bucketing + confidence sections); the clustering
-adapters (k-means sweep + preprocess); **name analysis** (`core/name_analysis.py`
-+ the `ports.llm` port + `adapters/llm/openrouter.py` → Gemini flash); and a demo
-`webapp/` (search + admin + review + live `/api/classify`) aligned to the §10/§8
-contract. **46 tests pass.**
+**The mock pipeline is END-TO-END COMPLETE** and **91 tests pass**: classify
+(`run_batch`) → `output/color_records.jsonl` → `core.search`, plus a demo
+`webapp/`, the `name_analysis` LLM step (OpenRouter → Gemini), and a `cli/eval`
+accuracy harness (92% on the synthetic labelled set; the one failure, beige →
+orange, is the §5 neutral-bucket gap).
 
-**Next — You (backend):** `image_pipeline` glue (relevance filter), then
-`reconcile`, the mock data layer, and `run_batch`. **Partner (UI):** `webapp/` is
-built and on-contract; iterate on it.
+**Remaining:**
+- **Demo:** wire the webapp to `core.search` + `load_classified` so it searches
+  REAL `run_batch` output instead of its `db.py` seed (jessi).
+- **Data + tuning:** real `company_colors` sample (§16, jessi gathering), then
+  tune thresholds — point `cli/eval --labels` at a labelled real set to measure
+  (beige→orange is the first known target).
+- **Production (Phase 4):** Directus/R2 adapters behind the ports + the inline
+  post-persist hook.
+
+Run it: `uv run pytest` · `uv run python -m cli.run_batch` ·
+`uv run python -m cli.eval` · `uv run uvicorn webapp.main:app --reload`.
 
 **Open external item:** a real `company_colors` sample for `fixtures/` (§16) —
 needed before `run_batch` runs end-to-end on real data.

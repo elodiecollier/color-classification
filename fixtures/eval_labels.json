@@ -1,0 +1,15 @@
+[
+  {"image": "green_solid.png",  "name": "Sage Mist",        "expected": ["green"]},
+  {"image": "red_solid.png",    "name": "Crimson Tide",     "expected": ["red"]},
+  {"image": "orange_solid.png", "name": "Sunset Orange",    "expected": ["orange"]},
+  {"image": "yellow_solid.png", "name": "Lemon Zest",       "expected": ["yellow"]},
+  {"image": "blue_solid.png",   "name": "Navy Harbor",      "expected": ["blue"]},
+  {"image": "purple_solid.png", "name": "Plum Twilight",    "expected": ["purple"]},
+  {"image": "brown_solid.png",  "name": "Walnut",           "expected": ["brown"]},
+  {"image": "grey_solid.png",   "name": "Slate",            "expected": ["grey"]},
+  {"image": "black_solid.png",  "name": "Onyx",             "expected": ["black"]},
+  {"image": "white_solid.png",  "name": "Arctic Frost",     "expected": ["white"]},
+  {"image": "checkerboard.png", "name": "Ocean Blue",       "expected": ["black", "white"]},
+  {"image": "two_tone_gb.png",  "name": "Meadow Sky",       "expected": ["green", "blue"]},
+  {"image": "beige_solid.png",  "name": "Fall River Glaze", "expected": ["brown"]}
+]
