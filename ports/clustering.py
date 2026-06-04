@@ -14,26 +14,16 @@ out as TWO clusters (black + white), never one grey.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
 
+# Single source of truth for the type lives in core/models.py (numpy-free) so
+# core/buckets.py can consume it without importing numpy. Re-exported here for
+# the adapters' convenience (`from ports.clustering import ClusterResult`).
+from core.models import ClusterResult
 
-@dataclass(frozen=True)
-class ClusterResult:
-    """One dominant color found in an image, BEFORE the relevance filter.
-
-    The relevance filter (coverage threshold + ΔE merging) runs downstream
-    in core/image_pipeline.py — strategies report everything they find.
-    """
-
-    lab: tuple[float, float, float]
-    """CIELAB centroid. L in [0, 100]; a/b roughly in [-128, 128]."""
-
-    coverage: float
-    """Fraction of the image's pixels in this cluster, in [0, 1].
-    All clusters' coverages sum to ~1.0."""
+__all__ = ["ClusterResult", "ClusteringStrategy"]
 
 
 class ClusteringStrategy(Protocol):

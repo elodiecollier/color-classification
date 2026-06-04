@@ -80,17 +80,17 @@ def test_lab_to_hsl_then_bucket(lab, expected):
 # --- buckets_for_centroids: multi-tone, dedup, coverage ordering ------------
 def test_checkerboard_is_black_and_white_not_grey():
     centroids = [
-        ClusterResult(centroid=LabColor(L=0.0, a=0.0, b=0.0), coverage=0.5),
-        ClusterResult(centroid=LabColor(L=100.0, a=0.0, b=0.0), coverage=0.5),
+        ClusterResult(lab=(0.0, 0.0, 0.0), coverage=0.5),
+        ClusterResult(lab=(100.0, 0.0, 0.0), coverage=0.5),
     ]
     assert set(buckets_for_centroids(centroids)) == {B.BLACK, B.WHITE}
 
 
 def test_centroids_dedup_and_order_by_coverage():
     centroids = [
-        ClusterResult(centroid=LabColor(L=53.24, a=80.09, b=67.20), coverage=0.2),   # red
-        ClusterResult(centroid=LabColor(L=32.30, a=79.19, b=-107.86), coverage=0.5), # blue
-        ClusterResult(centroid=LabColor(L=53.24, a=80.09, b=67.20), coverage=0.3),   # red again
+        ClusterResult(lab=(53.24, 80.09, 67.20), coverage=0.2),   # red
+        ClusterResult(lab=(32.30, 79.19, -107.86), coverage=0.5), # blue
+        ClusterResult(lab=(53.24, 80.09, 67.20), coverage=0.3),   # red again
     ]
     # red total 0.5 vs blue 0.5 -> tie broken by first appearance (red first)
     assert buckets_for_centroids(centroids) == [B.RED, B.BLUE]

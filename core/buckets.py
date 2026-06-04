@@ -69,7 +69,8 @@ def buckets_for_centroids(
     coverage: dict[ColorBucket, float] = {}
     first_seen: list[ColorBucket] = []
     for cluster in centroids:
-        bucket = bucket_for_hsl(lab_to_hsl(cluster.centroid), config)
+        lab = LabColor(L=cluster.lab[0], a=cluster.lab[1], b=cluster.lab[2])
+        bucket = bucket_for_hsl(lab_to_hsl(lab), config)
         if bucket not in coverage:
             coverage[bucket] = 0.0
             first_seen.append(bucket)

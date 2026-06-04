@@ -9,14 +9,16 @@ IMPLEMENTED here: the value types needed by the bucketing + clustering seam
 (`ColorBucket`, `HSL`, `LabColor`, `ClusterResult`). The larger records below
 are owned by their respective workstreams and left as TODO.
 
-COORDINATION: `ClusterResult` lives HERE (the data contract), not in
-`ports/clustering.py`. The clustering port + the k-means/HDBSCAN adapters should
-IMPORT it from this module rather than redefine it, so bucketing and clustering
-agree on one shape.
+COORDINATION: `ClusterResult` lives HERE (the data contract), and
+`ports/clustering.py` + the k-means/HDBSCAN adapters import it from this module
+rather than redefine it, so bucketing and clustering agree on one shape. It is a
+plain frozen dataclass (not pydantic) with `lab` as a (L, a, b) tuple, so numpy
+never leaks into core/ via this type.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
 
@@ -61,14 +63,22 @@ class LabColor(BaseModel):
     b: float = Field(description="Blue(-) to yellow(+) axis")
 
 
-class ClusterResult(BaseModel):
-    """One pixel cluster from the clustering strategy (pre relevance-filter):
-    its LAB centroid and the fraction of pixels it covers."""
+@dataclass(frozen=True)
+class ClusterResult:
+    """One dominant color from a ClusteringStrategy, BEFORE the relevance filter.
 
-    model_config = _FROZEN
+    A lightweight frozen dataclass (not pydantic): it's the per-cluster CV
+    interchange type, produced in a hot path and consumed by both the relevance
+    filter and `core/buckets.py`. `lab` is a plain tuple so numpy stays out of
+    core/. The relevance filter (coverage threshold + ΔE merge) runs downstream
+    in core/image_pipeline.py — strategies report everything they find.
+    """
 
-    centroid: LabColor
-    coverage: float = Field(ge=0.0, le=1.0, description="Pixel-share of this cluster [0, 1]")
+    lab: tuple[float, float, float]
+    """CIELAB centroid. L in [0, 100]; a/b roughly in [-128, 128]."""
+
+    coverage: float
+    """Fraction of the image's pixels in this cluster, in [0, 1]."""
 
 
 Source = Literal["name", "image", "reconciled", "manual"]
