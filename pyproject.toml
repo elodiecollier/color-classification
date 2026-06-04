@@ -3,7 +3,7 @@
 # Dependencies are added per workstream as modules get implemented (see
 # CLAUDE.md §14). Expected eventual deps, kept here as a checklist:
 #   - pydantic                  -> core/models.py (schema + validation)
-#   - google-genai              -> core/gemini.py (name analysis call)
+#   - openai (OpenRouter gateway) -> adapters/llm/openrouter.py (name analysis)
 #   - numpy / scikit-image      -> adapters/clustering (LAB conversion, ΔE)
 #   - scikit-learn or hdbscan   -> adapters/clustering (pixel clustering)
 #   - pillow                    -> image decode + downscale
@@ -20,6 +20,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.3",
     "numpy>=2.4.6",
+    "openai>=1.0",
     "pillow>=12.2.0",
     "pydantic>=2",
     "python-multipart>=0.0.31",

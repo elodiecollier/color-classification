@@ -5,7 +5,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# Secrets — GOOGLE_GENAI_API_KEY lives in .env, never committed
+# Secrets — OPENROUTER_API_KEY lives in .env, never committed
 .env
 
 # Local run artifacts: the file sink writes color records (JSONL) and the
