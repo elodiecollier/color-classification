@@ -1,13 +1,18 @@
-"""Accuracy harness: run the pipeline over LABELED swatches, report accuracy (§13 step 13).
+"""Accuracy harness: run the pipeline over LABELED swatches, report accuracy (§13).
 
     uv run python -m cli.eval                 # image-only (no API key)
     uv run python -m cli.eval --with-name     # name + image via reconcile (needs OPENROUTER_API_KEY)
+    uv run python -m cli.eval --compare       # image-only vs +name side by side (needs key)
     uv run python -m cli.eval --labels path.json
 
 Labels (`fixtures/eval_labels.json`): [{image, name?, expected: [bucket,...]}].
-Prints expected vs. actual per case (✓/✗ on exact bucket-set match) and an overall
-accuracy %. A report, not a CI gate — always exits 0. Built so jessi's real
-swatch data slots straight in: point `--labels` at a labelled real set.
+Reports, beyond a single % :
+  - per-row expected vs. actual (✓/✗ on exact bucket-set match),
+  - per-bucket RECALL (which colors we fail to detect — the tuning targets),
+  - top CONFUSIONS (expected bucket → what we produced instead).
+Built so jessi's real swatch data slots straight in: point `--labels` at a
+labelled real set; the confusion/recall report scales to hundreds of rows.
+A report, not a CI gate — always exits 0.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import json
 import os
 import sys
 import warnings
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,7 +57,35 @@ def evaluate(
 
 
 def accuracy(results: list[CaseResult]) -> float:
+    """Fraction of cases whose actual bucket-set exactly equals the expected set."""
     return sum(r.ok for r in results) / len(results) if results else 0.0
+
+
+def per_bucket_recall(results: list[CaseResult]) -> dict[ColorBucket, tuple[int, int]]:
+    """For each expected bucket: (hits, total) — how often we detected it when labelled."""
+    hits: Counter[ColorBucket] = Counter()
+    total: Counter[ColorBucket] = Counter()
+    for r in results:
+        for bucket in r.expected:
+            total[bucket] += 1
+            if bucket in r.actual:
+                hits[bucket] += 1
+    return {bucket: (hits[bucket], total[bucket]) for bucket in total}
+
+
+def confusions(results: list[CaseResult]) -> Counter[tuple[ColorBucket, ColorBucket]]:
+    """Count (missed-expected -> produced-instead) pairs across all cases.
+
+    A case contributes (m, e) for every expected bucket m we failed to produce
+    paired with every unexpected bucket e we produced — i.e. what each color got
+    mistaken for. Misses with no substitute show up only in `per_bucket_recall`.
+    """
+    counts: Counter[tuple[ColorBucket, ColorBucket]] = Counter()
+    for r in results:
+        for missed in r.expected - r.actual:
+            for got in r.actual - r.expected:
+                counts[(missed, got)] += 1
+    return counts
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -60,44 +94,75 @@ def main() -> None:
     warnings.filterwarnings("ignore")  # quiet sklearn's k-sweep ConvergenceWarnings
 
     cases = json.loads(Path(args.labels).read_text())
-    classify = _build_classify(args)
-    results = evaluate(cases, classify)
+    store, strategy = _image_deps(args.images)
 
-    print(f"{'image':<20}{'expected':<22}{'actual':<22}result")
-    print("-" * 70)
-    for r in results:
-        print(
-            f"{r.image:<20}{_fmt(r.expected):<22}{_fmt(r.actual):<22}"
-            f"{'OK' if r.ok else 'WRONG'}"
-        )
-    acc = accuracy(results)
-    print("-" * 70)
-    print(f"accuracy: {acc:.0%}  ({sum(r.ok for r in results)}/{len(results)})")
+    if args.compare:
+        llm = _require_llm()
+        _report(evaluate(cases, _classify(store, strategy, None)), title="image-only", rows=False)
+        print()
+        _report(evaluate(cases, _classify(store, strategy, llm)), title="image + name", rows=False)
+    else:
+        llm = _require_llm() if args.with_name else None
+        _report(evaluate(cases, _classify(store, strategy, llm)), title=None, rows=True)
 
 
-def _build_classify(args: argparse.Namespace) -> Callable[[dict], frozenset[ColorBucket]]:
+def _report(results: list[CaseResult], *, title: str | None, rows: bool) -> None:
+    if title:
+        print(f"### {title}")
+    if rows:
+        print(f"{'image':<20}{'expected':<22}{'actual':<22}result")
+        print("-" * 70)
+        for r in results:
+            print(f"{r.image:<20}{_fmt(r.expected):<22}{_fmt(r.actual):<22}"
+                  f"{'OK' if r.ok else 'WRONG'}")
+        print("-" * 70)
+
+    correct = sum(r.ok for r in results)
+    print(f"accuracy: {accuracy(results):.0%}  ({correct}/{len(results)})")
+
+    recall = per_bucket_recall(results)
+    misses = {b: (h, t) for b, (h, t) in recall.items() if h < t}
+    if misses:
+        print("per-bucket recall (misses first):")
+        for bucket, (h, t) in sorted(misses.items(), key=lambda kv: kv[1][0] / kv[1][1]):
+            print(f"  {bucket.value:<8} {h / t:>4.0%}  ({h}/{t})")
+
+    conf = confusions(results)
+    if conf:
+        print("top confusions (expected → got instead):")
+        for (missed, got), n in conf.most_common(10):
+            print(f"  {missed.value} → {got.value}   ×{n}")
+
+
+def _image_deps(images_root: str):
     from adapters.clustering.kmeans_sweep import KMeansSweep
-    from adapters.clustering.preprocess import load_lab_pixels
     from adapters.mock.local_image_store import LocalImageStore
     from config.thresholds import DEFAULT
-    from core.image_pipeline import analyze_swatch
 
-    store = LocalImageStore(args.images)
+    store = LocalImageStore(images_root)
     strategy = KMeansSweep(
         k_max=DEFAULT.clustering.k_max,
         solid_delta_e=DEFAULT.clustering.solid_delta_e,
         silhouette_sample=DEFAULT.clustering.silhouette_sample,
         seed=DEFAULT.clustering.seed,
     )
+    return store, strategy
 
-    llm = None
-    if args.with_name:
-        key = os.environ.get("OPENROUTER_API_KEY")
-        if not key:
-            print("ERROR: --with-name requires OPENROUTER_API_KEY.", file=sys.stderr)
-            sys.exit(1)
-        from adapters.llm.openrouter import OpenRouterClient
-        llm = OpenRouterClient(api_key=key)
+
+def _require_llm():
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if not key:
+        print("ERROR: this mode requires OPENROUTER_API_KEY.", file=sys.stderr)
+        sys.exit(1)
+    from adapters.llm.openrouter import OpenRouterClient
+    return OpenRouterClient(api_key=key)
+
+
+def _classify(store, strategy, llm) -> Callable[[dict], frozenset[ColorBucket]]:
+    """Build a classify(case) -> buckets. With `llm`, runs the full reconcile."""
+    from adapters.clustering.preprocess import load_lab_pixels
+    from config.thresholds import DEFAULT
+    from core.image_pipeline import analyze_swatch
 
     def classify(case: dict) -> frozenset[ColorBucket]:
         img = store.get_image(case["image"])
@@ -129,6 +194,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--labels", default="fixtures/eval_labels.json", help="Labelled cases JSON")
     p.add_argument("--images", default="fixtures/images", help="Image root dir")
     p.add_argument("--with-name", action="store_true", help="Include the name signal (needs key)")
+    p.add_argument("--compare", action="store_true",
+                   help="Run image-only vs image+name side by side (needs key)")
     return p.parse_args()
 
 
