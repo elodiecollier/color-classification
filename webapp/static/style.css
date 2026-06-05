@@ -61,6 +61,7 @@ th { background: #fafbfc; font-size: 12.5px; text-transform: uppercase; color: #
 .review-thumb { width: 76px; height: 76px; border-radius: 10px; flex-shrink: 0;
   border: 1px solid rgba(0,0,0,.1); }
 .review-body { flex: 1; min-width: 0; }
+.proposal-row { display: flex; gap: 14px; align-items: flex-start; }
 .review-item .reason { font-size: 13.5px; color: #5a5f66; margin: 6px 0; }
 .empty { color: #8a919c; font-style: italic; }
 
@@ -72,5 +73,7 @@ th { background: #fafbfc; font-size: 12.5px; text-transform: uppercase; color: #
 #drop-zone.drag { border-color: #1d2025; background: #eef0f3; color: #1d2025; }
 #classify-result { margin-top: 12px; }
 select, input[type="file"] { font-size: 14px; padding: 8px; border-radius: 8px; border: 1px solid #cfd4db; background: #fff; }
+#swatch-name { font-size: 14px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid #cfd4db; min-width: 220px; }
 .flash { padding: 10px 14px; border-radius: 10px; background: #eaf6ec; border: 1px solid #bfe3c6; font-size: 14px; }
 .flash.warn { background: #fdf3e4; border-color: #f0d9b8; }

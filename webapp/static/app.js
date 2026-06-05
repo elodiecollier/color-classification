@@ -110,7 +110,6 @@ async function refreshAdmin() {
 
   renderReview(review, buckets);
   renderProducts(items);
-  renderClassifySelect(items);
 }
 
 function renderProducts(adminItems) {
@@ -252,25 +251,17 @@ function renderReview(review, allBuckets) {
   }
 }
 
-function renderClassifySelect(adminItems) {
-  const sel = $("#classify-product");
-  sel.replaceChildren(
-    ...adminItems.map(({ item }) =>
-      Object.assign(document.createElement("option"), {
-        value: idOf(item),
-        textContent: `${item.swatch_name ?? item.material_id} — ${item.company ?? "?"}${item.color_groups.length ? "" : " (unclassified)"}`,
-      }),
-    ),
-  );
-}
-
-// ---------- classify drop-zone ----------
+// ---------- add-to-library drop-zone ----------
 const dropZone = $("#drop-zone");
 const fileInput = $("#classify-file");
+const nameInput = $("#swatch-name");
 
 const showPickedFile = () => {
   const f = fileInput.files[0];
   $("#drop-zone-label").textContent = f ? `🖼 ${f.name}` : "📥 Drop a swatch image here — or click to browse";
+  // autofill the swatch name from the file name (sans extension); the user
+  // can edit it before hitting "Add to library"
+  if (f) nameInput.value = f.name.replace(/\.[^.]+$/, "");
 };
 
 dropZone.onclick = () => fileInput.click();
@@ -290,38 +281,109 @@ dropZone.ondrop = (e) => {
   }
   fileInput.files = e.dataTransfer.files;
   showPickedFile();
-  $("#classify-form").requestSubmit(); // dropping = classify immediately
+  nameInput.focus(); // dropped: name is prefilled — review it, then Add to library
 };
 
 // Dropping anywhere else on the page must not navigate away from the demo.
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
 
+// Step 1: Analyze — run the full pipeline, show the editable proposal.
 $("#classify-form").onsubmit = async (e) => {
   e.preventDefault();
-  const file = $("#classify-file").files[0];
-  if (!file) return;
+  const out = $("#classify-result");
+  const file = fileInput.files[0];
+  if (!file) {
+    out.innerHTML = `<div class="flash warn">Drop or pick a swatch image first.</div>`;
+    return;
+  }
+  const swatchName = nameInput.value.trim();
   const form = new FormData();
   form.append("file", file);
-  const out = $("#classify-result");
-  out.innerHTML = `<p class="muted">Clustering…</p>`;
+  form.append("name", swatchName);
+  out.innerHTML = `<p class="muted">Analyzing (pixels${swatchName ? " + name" : ""})…</p>`;
   try {
-    // response is a §8 ColorRecord
-    const rec = await api(`/api/classify/${$("#classify-product").value}`, { method: "POST", body: form });
-    const chips = rec.color_groups
-      .map((b) => `<span class="chip"><span class="dot" style="background:${BUCKET_CSS[b] || "#ccc"}"></span>${b}</span>`)
-      .join(" ");
-    const dom = `<span class="chip"><span class="dot" style="background:${cssOf(rec.canonical_hsl)}"></span>dominant</span>`;
-    out.innerHTML = rec.needs_review
-      ? `<div class="flash warn">Ambiguous (confidence ${Math.round(rec.confidence * 100)}%) → sent to review queue &nbsp;${chips} ${dom}</div>`
-      : `<div class="flash">Published <b>${rec.color_groups.join(", ")}</b> (confidence ${Math.round(rec.confidence * 100)}%) &nbsp;${chips} ${dom}</div>`;
-    fileInput.value = "";   // ready for the next drop
-    showPickedFile();
-    refreshAdmin();
+    const a = await api("/api/swatches/analyze", { method: "POST", body: form });
+    renderProposal(file, swatchName, a);
   } catch (err) {
     out.innerHTML = `<div class="flash warn">⚠️ ${err.message}</div>`;
   }
 };
+
+// Step 2: the proposal — tags as toggleable chips, then commit or discard.
+function renderProposal(file, swatchName, a) {
+  const out = $("#classify-result");
+  const rec = a.record;
+  const pct = (v) => `${Math.round(v * 100)}%`;
+
+  const nameLine = !swatchName
+    ? "name signal: (no name given)"
+    : a.name_used
+      ? `name signal: ${a.name_buckets.length ? a.name_buckets.join(", ") : "not an intuitive color"} (${pct(a.name_confidence)})`
+      : "name signal: unavailable (no OPENROUTER_API_KEY)";
+
+  const box = document.createElement("div");
+  box.className = `flash${rec.needs_review ? " warn" : ""}`;
+  // preview the dropped image itself, straight from the browser's copy
+  const imgUrl = URL.createObjectURL(file);
+  box.innerHTML = `
+    <div class="proposal-row">
+      <div class="review-thumb" style="background-image:url('${imgUrl}');background-size:cover;background-position:center" title="${file.name}"></div>
+      <div class="review-body">
+        <b>Proposed for “${swatchName || file.name}”</b>
+        <div class="bucket-detail">${nameLine}
+pipeline verdict: ${rec.color_groups.join(", ") || "(none)"} · confidence ${pct(rec.confidence)} · source: ${rec.source}${rec.conflict_reason ? `\n⚠ ${rec.conflict_reason}` : ""}</div>
+        <div class="suggested"></div>
+        <button class="btn commit">Add to library</button>
+        <button class="btn secondary discard">Discard</button>
+      </div>
+    </div>`;
+
+  // full-taxonomy editable chips, proposal pre-selected, pixel evidence shown
+  const selected = new Set(rec.color_groups);
+  const sug = box.querySelector(".suggested");
+  for (const [b, cov] of Object.entries(a.bucket_coverage)) {
+    const chip = document.createElement("span");
+    chip.className = `chip selectable${selected.has(b) ? " on" : ""}`;
+    chip.title = cov > 0 ? "pixel coverage" : "no pixel evidence";
+    chip.innerHTML = `<span class="dot" style="background:${BUCKET_CSS[b] || "#ccc"}"></span>${b}` +
+      (cov > 0 ? ` <span class="pct">${pct(cov)}</span>` : "");
+    chip.onclick = () => {
+      chip.classList.toggle("on");
+      chip.classList.contains("on") ? selected.add(b) : selected.delete(b);
+    };
+    sug.appendChild(chip);
+  }
+
+  box.querySelector(".commit").onclick = async () => {
+    if (!selected.size) {
+      alert("Select at least one color — or Discard.");
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", swatchName);
+    form.append("record", JSON.stringify(rec));
+    form.append("color_groups", JSON.stringify([...selected]));
+    try {
+      const final = await api("/api/swatches", { method: "POST", body: form });
+      URL.revokeObjectURL(imgUrl);
+      out.innerHTML = `<div class="flash">Added “${swatchName || final.material_id}” → <b>${final.color_groups.join(", ")}</b> (source: ${final.source})</div>`;
+      fileInput.value = "";
+      nameInput.value = "";
+      showPickedFile();
+      refreshAdmin();
+    } catch (err) {
+      out.innerHTML = `<div class="flash warn">⚠️ ${err.message}</div>`;
+    }
+  };
+  box.querySelector(".discard").onclick = () => {
+    URL.revokeObjectURL(imgUrl);
+    out.replaceChildren();
+  };
+
+  out.replaceChildren(box);
+}
 
 // initial load
 refreshAdmin();

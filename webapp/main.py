@@ -24,9 +24,13 @@ Admin mutations are in-memory; restart re-reads the files.
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from dotenv import load_dotenv
+from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,6 +39,8 @@ from adapters.clustering.preprocess import load_lab_pixels
 from config.thresholds import DEFAULT
 from core.buckets import bucket_for_hsl, lab_to_hsl
 from core.image_pipeline import analyze_swatch
+from core.name_analysis import analyze_name
+from core.reconcile import reconcile
 from core.models import (
     ColorBucket,
     ColorRecord,
@@ -47,6 +53,16 @@ from core.models import (
 from webapp import db
 
 app = FastAPI(title="Color Classification Demo")
+
+
+@app.middleware("http")
+async def no_cache_frontend(request, call_next):
+    """Never let the browser cache the demo UI files — a stale app.js against a
+    fresh index.html produces baffling null-element errors after every change."""
+    response = await call_next(request)
+    if request.url.path in ("/", "/index.html", "/app.js", "/style.css"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # --- the §10 search contract ---------------------------------------------------
@@ -237,6 +253,126 @@ def dismiss_review(item_id: str) -> dict:
     return {"dismissed": item_id}
 
 
+# --- add a new swatch to the library, live (analyze -> human edit -> commit) -------
+
+load_dotenv()  # OPENROUTER_API_KEY for the name signal, if present
+_llm_client = None
+
+
+def _llm():
+    """Lazily build the OpenRouter client; None when no key is configured —
+    the upload flow then degrades gracefully to image-only."""
+    global _llm_client
+    if _llm_client is None and os.environ.get("OPENROUTER_API_KEY"):
+        from adapters.llm.openrouter import OpenRouterClient
+        _llm_client = OpenRouterClient()
+    return _llm_client
+
+
+class UploadAnalysis(BaseModel):
+    """Proposed (NOT stored) classification of an uploaded swatch: the full
+    two-signal pipeline result + the evidence the UI needs for editing."""
+
+    record: ColorRecord  # provisional ids; reconcile's verdict
+    bucket_coverage: dict[str, float]
+    name_used: bool  # False when no name given or no API key
+    name_buckets: list[ColorBucket] = []
+    name_confidence: float = 0.0
+
+
+@app.post("/api/swatches/analyze", response_model=UploadAnalysis)
+async def analyze_upload(file: UploadFile, name: str = Form("")) -> UploadAnalysis:
+    """Run the REAL two-signal pipeline (image clustering + Gemini name
+    analysis + reconcile) on an upload, without storing anything. The UI shows
+    this proposal for human edit, then commits via POST /api/swatches."""
+    image_bytes = await file.read()
+    image_result = analyze_swatch(
+        image_bytes, load_pixels=load_lab_pixels, strategy=_strategy(), config=DEFAULT,
+    )
+    if image_result is None:
+        raise HTTPException(400, "not a decodable image (or no usable color)")
+
+    swatch_name = name.strip()
+    name_result = None
+    client = _llm()
+    if client is not None and swatch_name:
+        name_result = analyze_name(swatch_name, client)
+
+    provisional = MaterialRecord(material_id="(preview)", swatch_name=swatch_name or None)
+    record = reconcile(provisional, name_result, image_result)
+    return UploadAnalysis(
+        record=record,
+        bucket_coverage=_bucket_coverage(record),
+        name_used=name_result is not None,
+        name_buckets=name_result.buckets if name_result else [],
+        name_confidence=name_result.confidence if name_result else 0.0,
+    )
+
+
+@app.post("/api/swatches", response_model=ColorRecord)
+async def add_swatch(
+    file: UploadFile,
+    name: str = Form(""),
+    record: str | None = Form(None),
+    color_groups: str | None = Form(None),
+) -> ColorRecord:
+    """'Add to library': store an uploaded swatch in the in-memory library.
+
+    Preferred path: `record` (the /analyze proposal, JSON) + `color_groups`
+    (the human-confirmed buckets, JSON list) -> published as confirmed.
+    Without them (bare API use), falls back to auto image-only classify."""
+    image_bytes = await file.read()
+
+    if record is None or color_groups is None:
+        # bare path: classify image-only and auto-store (ambiguous -> review)
+        image_result = analyze_swatch(
+            image_bytes, load_pixels=load_lab_pixels, strategy=_strategy(), config=DEFAULT,
+        )
+        if image_result is None:
+            raise HTTPException(400, "not a decodable image (or no usable color)")
+        material = db.add_uploaded_swatch(
+            name.strip(), image_bytes, file.content_type or "image/png"
+        )
+        return _store_image_record(material, image_result)
+
+    # commit path: human reviewed the /analyze proposal
+    try:
+        proposal = ColorRecord.model_validate_json(record)
+        groups = [_bucket_or_422(t) for t in json.loads(color_groups)]
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, f"bad record/color_groups payload: {exc}") from exc
+    if not groups:
+        raise HTTPException(422, "select at least one color group")
+
+    material = db.add_uploaded_swatch(
+        name.strip(), image_bytes, file.content_type or "image/png"
+    )
+    edited = set(groups) != set(proposal.color_groups)
+    final = proposal.model_copy(
+        update={
+            "material_id": material.material_id,
+            "swatch_id": material.swatch_id,
+            "color_groups": groups,
+            # human confirmed -> publish; an edit makes it a manual call
+            "source": "manual" if edited else proposal.source,
+            "needs_review": False,
+            "conflict_reason": None,
+        }
+    )
+    db.COLOR_RECORDS[db.key_of(material.material_id, material.swatch_id)] = final
+    return final
+
+
+@app.get("/uploads/{key}")
+def uploaded_image(key: str) -> Response:
+    """Serve a live-uploaded swatch image from memory (see db.UPLOADED_IMAGES)."""
+    entry = db.UPLOADED_IMAGES.get(key)
+    if entry is None:
+        raise HTTPException(404, "no such upload")
+    data, content_type = entry
+    return Response(content=data, media_type=content_type)
+
+
 # --- classify: the REAL pipeline, live --------------------------------------------
 
 
@@ -248,7 +384,6 @@ async def classify(item_id: str, file: UploadFile) -> ColorRecord:
     image-only here, so the demo rule stands in for §6 reconciliation:
     1-2 buckets -> published, 3+ -> review queue."""
     material = _material_or_404(item_id)
-    key = db.key_of(material.material_id, material.swatch_id)
 
     image_bytes = await file.read()
     image_result = analyze_swatch(
@@ -256,7 +391,13 @@ async def classify(item_id: str, file: UploadFile) -> ColorRecord:
     )
     if image_result is None:
         raise HTTPException(400, "not a decodable image (or no usable color)")
+    return _store_image_record(material, image_result)
 
+
+def _store_image_record(material: MaterialRecord, image_result) -> ColorRecord:
+    """Build the §8 record from an image analysis and store it: confident
+    (1-2 buckets) -> published, ambiguous (3+) -> review queue."""
+    key = db.key_of(material.material_id, material.swatch_id)
     ambiguous = len(image_result.buckets) > 2
     record = ColorRecord(
         material_id=material.material_id,

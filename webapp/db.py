@@ -16,6 +16,7 @@ material can have multiple swatches and each gets its own ColorRecord.
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -78,6 +79,29 @@ COLOR_RECORDS: dict[str, ColorRecord] = {
 
 REVIEW_QUEUE: list[ColorRecord] = _load_jsonl(REVIEW_PATH)
 
+# Swatches added live via the webapp ("Add to library") — in-memory only, like
+# all admin mutations. Image bytes are kept here and served at /uploads/{key};
+# everything is cleared on restart.
+UPLOADED_IMAGES: dict[str, tuple[bytes, str]] = {}  # key -> (bytes, content type)
+_upload_ids = itertools.count(1)
+
+
+def add_uploaded_swatch(name: str, image_bytes: bytes, content_type: str) -> MaterialRecord:
+    """Create a new in-memory material for a live-uploaded swatch image."""
+    n = next(_upload_ids)
+    material = MaterialRecord(
+        material_id=f"upload-{n}",
+        swatch_id=f"u{n}",
+        swatch_name=name or None,
+        company="(uploaded)",
+    )
+    MATERIALS.append(material)
+    UPLOADED_IMAGES[key_of(material.material_id, material.swatch_id)] = (
+        image_bytes,
+        content_type or "image/png",
+    )
+    return material
+
 
 # --- lookups -----------------------------------------------------------------
 
@@ -108,6 +132,14 @@ def find_record(material: MaterialRecord) -> ColorRecord | None:
     return published_for(material) or get_queued(key_of(material.material_id, material.swatch_id))
 
 
+def _image_url(material: MaterialRecord) -> str | None:
+    if material.image_ref:
+        return f"/swatches/{material.image_ref}"  # fixture file (mock R2)
+    if key_of(material.material_id, material.swatch_id) in UPLOADED_IMAGES:
+        return f"/uploads/{key_of(material.material_id, material.swatch_id)}"
+    return None
+
+
 def to_search_item(material: MaterialRecord, record: ColorRecord | None) -> SearchResultItem:
     """The §10 join: ColorRecord + display fields from its MaterialRecord."""
     return SearchResultItem(
@@ -115,7 +147,7 @@ def to_search_item(material: MaterialRecord, record: ColorRecord | None) -> Sear
         swatch_id=material.swatch_id,
         swatch_name=material.swatch_name,
         company=material.company,
-        image_url=f"/swatches/{material.image_ref}" if material.image_ref else None,
+        image_url=_image_url(material),
         color_groups=record.color_groups if record else [],
         canonical_hsl=record.canonical_hsl if record else None,
         confidence=record.confidence if record else 0.0,

@@ -40,16 +40,17 @@
 
     <section>
       <h2>Classify a swatch</h2>
-      <p class="muted">Runs the real pipeline: image → k-means clustering → color buckets.
-        Confident results auto-tag the product; ambiguous ones go to review.</p>
+      <p class="muted">Drop a swatch image, name it, analyze — the full pipeline runs
+        (k-means on the pixels + Gemini on the name + reconcile), you review/edit the
+        proposed tags, then add it to the library. <b>In-memory:</b> cleared on restart.</p>
       <form id="classify-form">
-        <select id="classify-product"></select>
         <!-- click = file picker, or drag a swatch image onto the zone -->
         <div id="drop-zone" tabindex="0">
           <span id="drop-zone-label">📥 Drop a swatch image here — or click to browse</span>
           <input id="classify-file" type="file" accept="image/*" hidden />
         </div>
-        <button type="submit">Classify</button>
+        <input id="swatch-name" type="text" placeholder="Swatch name…" autocomplete="off" />
+        <button type="submit">Analyze</button>
       </form>
       <div id="classify-result"></div>
     </section>
