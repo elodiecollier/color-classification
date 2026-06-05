@@ -1,29 +1,418 @@
 [
-  {"material_id": "m1", "swatch_id": "s1", "swatch_name": "Sage Mist", "company": "GreenBuild Co", "image_ref": "sage_solid.png"},
-  {"material_id": "m2", "swatch_id": "s2", "swatch_name": "Fall River Glaze", "company": "Sun Mountain Door", "image_ref": "terracotta_solid.png"},
-  {"material_id": "m3", "swatch_id": "s3", "swatch_name": "Ocean Blue", "company": "AquaTile", "image_ref": "checkerboard.png"},
-  {"material_id": "m4", "swatch_id": "s4", "swatch_name": "Forest Canopy", "company": "GreenBuild Co"},
-  {"material_id": "m5", "swatch_id": "s5"},
-
-  {"material_id": "Merpeople1", "swatch_id": "s6", "swatch_name": "Navy/Ivory", "company": "Chasing Paper", "image_ref": "merpeople navy ivory.png"},
-  {"material_id": "Merpeople2", "swatch_id": "s7", "swatch_name": "Black & White", "company": "Chasing Paper", "image_ref": "merpeople black white.png"},
-  
-  {"material_id": "Reeling1", "swatch_id": "s8", "swatch_name": "Avocado", "company": "Past Forward", "image_ref": "Reeling Avocado.png"},
-  {"material_id": "Reeling2", "swatch_id": "s9", "swatch_name": "Pebble", "company": "Past Forward", "image_ref": "Reeling Pebble.png"},
-  {"material_id": "Reeling3", "swatch_id": "s10", "swatch_name": "Sapphire", "company": "Past Forward", "image_ref": "Reeling Sapphire.png"},
-  {"material_id": "Reeling4", "swatch_id": "s11", "swatch_name": "Spice", "company": "Past Forward", "image_ref": "Reeling Spice.png"},
-
-  {"material_id": "Venetian Floral Bespoke Mural1", "swatch_id": "s12", "swatch_name": "Normal", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural.png"},
-  {"material_id": "Venetian Floral Bespoke Mural2", "swatch_id": "s13", "swatch_name": "Rose", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Rose.png"},
-  {"material_id": "Venetian Floral Bespoke Mural3", "swatch_id": "s14", "swatch_name": "Verde", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Verde.png"},
-  {"material_id": "Venetian Floral Bespoke Mural4", "swatch_id": "s15", "swatch_name": "Midnight", "company": "Graham & Brown Wallcoverings Inc.", "image_ref": "Venetian Floral Bespoke Mural Midnight.png"},
-
-  {"material_id": "Centre Swinging Door1", "swatch_id": "s16", "swatch_name": "Ash", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Ash.png"},
-  {"material_id": "Centre Swinging Door2", "swatch_id": "s17", "swatch_name": "Brushed Steel", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Brushed Steel.png"},
-  {"material_id": "Centre Swinging Door3", "swatch_id": "s18", "swatch_name": "Milano", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Milano.png"},
-  {"material_id": "Centre Swinging Door4", "swatch_id": "s19", "swatch_name": "Natural Teak", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Natural Teak.png"},
-  {"material_id": "Centre Swinging Door5", "swatch_id": "s20", "swatch_name": "Sapele", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Sapele.png"},
-  {"material_id": "Centre Swinging Door6", "swatch_id": "s21", "swatch_name": "Timber", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door Timber.png"},
-  {"material_id": "Centre Swinging Door7", "swatch_id": "s22", "swatch_name": "White Maple", "company": "RAYDOOR®", "image_ref": "Centre Swinging Door White Maple.png"}
-  
+  {
+    "material_id": "m1",
+    "swatch_id": "s1",
+    "swatch_name": "Sage Mist",
+    "company": "GreenBuild Co",
+    "image_ref": "sage_solid.png"
+  },
+  {
+    "material_id": "m2",
+    "swatch_id": "s2",
+    "swatch_name": "Fall River Glaze",
+    "company": "Sun Mountain Door",
+    "image_ref": "terracotta_solid.png"
+  },
+  {
+    "material_id": "m3",
+    "swatch_id": "s3",
+    "swatch_name": "Ocean Blue",
+    "company": "AquaTile",
+    "image_ref": "checkerboard.png"
+  },
+  {
+    "material_id": "m4",
+    "swatch_id": "s4",
+    "swatch_name": "Forest Canopy",
+    "company": "GreenBuild Co"
+  },
+  {
+    "material_id": "m5",
+    "swatch_id": "s5"
+  },
+  {
+    "material_id": "Merpeople1",
+    "swatch_id": "s6",
+    "swatch_name": "Navy/Ivory",
+    "company": "Chasing Paper",
+    "image_ref": "merpeople navy ivory.png"
+  },
+  {
+    "material_id": "Merpeople2",
+    "swatch_id": "s7",
+    "swatch_name": "Black & White",
+    "company": "Chasing Paper",
+    "image_ref": "merpeople black white.png"
+  },
+  {
+    "material_id": "Reeling1",
+    "swatch_id": "s8",
+    "swatch_name": "Avocado",
+    "company": "Past Forward",
+    "image_ref": "Reeling Avocado.png"
+  },
+  {
+    "material_id": "Reeling2",
+    "swatch_id": "s9",
+    "swatch_name": "Pebble",
+    "company": "Past Forward",
+    "image_ref": "Reeling Pebble.png"
+  },
+  {
+    "material_id": "Reeling3",
+    "swatch_id": "s10",
+    "swatch_name": "Sapphire",
+    "company": "Past Forward",
+    "image_ref": "Reeling Sapphire.png"
+  },
+  {
+    "material_id": "Reeling4",
+    "swatch_id": "s11",
+    "swatch_name": "Spice",
+    "company": "Past Forward",
+    "image_ref": "Reeling Spice.png"
+  },
+  {
+    "material_id": "Venetian Floral Bespoke Mural1",
+    "swatch_id": "s12",
+    "swatch_name": "Normal",
+    "company": "Graham & Brown Wallcoverings Inc.",
+    "image_ref": "Venetian Floral Bespoke Mural.png"
+  },
+  {
+    "material_id": "Venetian Floral Bespoke Mural2",
+    "swatch_id": "s13",
+    "swatch_name": "Rose",
+    "company": "Graham & Brown Wallcoverings Inc.",
+    "image_ref": "Venetian Floral Bespoke Mural Rose.png"
+  },
+  {
+    "material_id": "Venetian Floral Bespoke Mural3",
+    "swatch_id": "s14",
+    "swatch_name": "Verde",
+    "company": "Graham & Brown Wallcoverings Inc.",
+    "image_ref": "Venetian Floral Bespoke Mural Verde.png"
+  },
+  {
+    "material_id": "Venetian Floral Bespoke Mural4",
+    "swatch_id": "s15",
+    "swatch_name": "Midnight",
+    "company": "Graham & Brown Wallcoverings Inc.",
+    "image_ref": "Venetian Floral Bespoke Mural Midnight.png"
+  },
+  {
+    "material_id": "Centre Swinging Door1",
+    "swatch_id": "s16",
+    "swatch_name": "Ash",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Ash.png"
+  },
+  {
+    "material_id": "Centre Swinging Door2",
+    "swatch_id": "s17",
+    "swatch_name": "Brushed Steel",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Brushed Steel.png"
+  },
+  {
+    "material_id": "Centre Swinging Door3",
+    "swatch_id": "s18",
+    "swatch_name": "Milano",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Milano.png"
+  },
+  {
+    "material_id": "Centre Swinging Door4",
+    "swatch_id": "s19",
+    "swatch_name": "Natural Teak",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Natural Teak.png"
+  },
+  {
+    "material_id": "Centre Swinging Door5",
+    "swatch_id": "s20",
+    "swatch_name": "Sapele",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Sapele.png"
+  },
+  {
+    "material_id": "Centre Swinging Door6",
+    "swatch_id": "s21",
+    "swatch_name": "Timber",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door Timber.png"
+  },
+  {
+    "material_id": "Centre Swinging Door7",
+    "swatch_id": "s22",
+    "swatch_name": "White Maple",
+    "company": "RAYDOOR\u00ae",
+    "image_ref": "Centre Swinging Door White Maple.png"
+  },
+  {
+    "material_id": "1",
+    "swatch_id": "s23",
+    "swatch_name": "1",
+    "company": "Acelab Samples",
+    "image_ref": "1.png"
+  },
+  {
+    "material_id": "alizarin",
+    "swatch_id": "s24",
+    "swatch_name": "Alizarin",
+    "company": "Acelab Samples",
+    "image_ref": "Alizarin.png"
+  },
+  {
+    "material_id": "as-you-found-it",
+    "swatch_id": "s25",
+    "swatch_name": "As You Found It",
+    "company": "Acelab Samples",
+    "image_ref": "As You Found It.png"
+  },
+  {
+    "material_id": "ashy-sandpaper",
+    "swatch_id": "s26",
+    "swatch_name": "Ashy Sandpaper",
+    "company": "Acelab Samples",
+    "image_ref": "Ashy Sandpaper.jpg"
+  },
+  {
+    "material_id": "aura-fluorite",
+    "swatch_id": "s27",
+    "swatch_name": "Aura Fluorite",
+    "company": "Acelab Samples",
+    "image_ref": "Aura Fluorite.png"
+  },
+  {
+    "material_id": "bahama-mama",
+    "swatch_id": "s28",
+    "swatch_name": "Bahama Mama",
+    "company": "Acelab Samples",
+    "image_ref": "Bahama Mama.png"
+  },
+  {
+    "material_id": "bashful-mauve",
+    "swatch_id": "s29",
+    "swatch_name": "Bashful Mauve",
+    "company": "Acelab Samples",
+    "image_ref": "Bashful Mauve.png"
+  },
+  {
+    "material_id": "biscuit",
+    "swatch_id": "s30",
+    "swatch_name": "Biscuit",
+    "company": "Acelab Samples",
+    "image_ref": "Biscuit.png"
+  },
+  {
+    "material_id": "black-gray",
+    "swatch_id": "s31",
+    "swatch_name": "Black Gray",
+    "company": "Acelab Samples",
+    "image_ref": "Black Gray.png"
+  },
+  {
+    "material_id": "cotton-candy",
+    "swatch_id": "s32",
+    "swatch_name": "Cotton Candy",
+    "company": "Acelab Samples",
+    "image_ref": "Cotton Candy.png"
+  },
+  {
+    "material_id": "creamsicle",
+    "swatch_id": "s33",
+    "swatch_name": "Creamsicle",
+    "company": "Acelab Samples",
+    "image_ref": "Creamsicle.png"
+  },
+  {
+    "material_id": "eggplant",
+    "swatch_id": "s34",
+    "swatch_name": "Eggplant",
+    "company": "Acelab Samples",
+    "image_ref": "Eggplant.png"
+  },
+  {
+    "material_id": "emerald",
+    "swatch_id": "s35",
+    "swatch_name": "Emerald",
+    "company": "Acelab Samples",
+    "image_ref": "Emerald.png"
+  },
+  {
+    "material_id": "gris",
+    "swatch_id": "s36",
+    "swatch_name": "Gris",
+    "company": "Acelab Samples",
+    "image_ref": "Gris.png"
+  },
+  {
+    "material_id": "inkling",
+    "swatch_id": "s37",
+    "swatch_name": "Inkling",
+    "company": "Acelab Samples",
+    "image_ref": "Inkling.png"
+  },
+  {
+    "material_id": "kingfisher",
+    "swatch_id": "s38",
+    "swatch_name": "Kingfisher",
+    "company": "Acelab Samples",
+    "image_ref": "Kingfisher.png"
+  },
+  {
+    "material_id": "lotus",
+    "swatch_id": "s39",
+    "swatch_name": "Lotus",
+    "company": "Acelab Samples",
+    "image_ref": "Lotus.jpg"
+  },
+  {
+    "material_id": "malachite",
+    "swatch_id": "s40",
+    "swatch_name": "Malachite",
+    "company": "Acelab Samples",
+    "image_ref": "Malachite.png"
+  },
+  {
+    "material_id": "merlot",
+    "swatch_id": "s41",
+    "swatch_name": "Merlot",
+    "company": "Acelab Samples",
+    "image_ref": "Merlot.png"
+  },
+  {
+    "material_id": "meteorite",
+    "swatch_id": "s42",
+    "swatch_name": "Meteorite",
+    "company": "Acelab Samples",
+    "image_ref": "Meteorite.png"
+  },
+  {
+    "material_id": "multi",
+    "swatch_id": "s43",
+    "swatch_name": "Multi",
+    "company": "Acelab Samples",
+    "image_ref": "Multi.jpg"
+  },
+  {
+    "material_id": "muti",
+    "swatch_id": "s44",
+    "swatch_name": "Muti",
+    "company": "Acelab Samples",
+    "image_ref": "Muti.jpg"
+  },
+  {
+    "material_id": "navy",
+    "swatch_id": "s45",
+    "swatch_name": "Navy",
+    "company": "Acelab Samples",
+    "image_ref": "Navy.png"
+  },
+  {
+    "material_id": "orange-blossom",
+    "swatch_id": "s46",
+    "swatch_name": "Orange Blossom",
+    "company": "Acelab Samples",
+    "image_ref": "Orange Blossom.png"
+  },
+  {
+    "material_id": "paloma",
+    "swatch_id": "s47",
+    "swatch_name": "Paloma",
+    "company": "Acelab Samples",
+    "image_ref": "Paloma.png"
+  },
+  {
+    "material_id": "parchment",
+    "swatch_id": "s48",
+    "swatch_name": "Parchment",
+    "company": "Acelab Samples",
+    "image_ref": "Parchment.png"
+  },
+  {
+    "material_id": "peach-fuzz",
+    "swatch_id": "s49",
+    "swatch_name": "Peach Fuzz",
+    "company": "Acelab Samples",
+    "image_ref": "Peach Fuzz.png"
+  },
+  {
+    "material_id": "purple-armor",
+    "swatch_id": "s50",
+    "swatch_name": "Purple Armor",
+    "company": "Acelab Samples",
+    "image_ref": "Purple Armor.jpg"
+  },
+  {
+    "material_id": "pyrite",
+    "swatch_id": "s51",
+    "swatch_name": "Pyrite",
+    "company": "Acelab Samples",
+    "image_ref": "Pyrite.png"
+  },
+  {
+    "material_id": "rhodes-island",
+    "swatch_id": "s52",
+    "swatch_name": "Rhodes Island",
+    "company": "Acelab Samples",
+    "image_ref": "Rhodes Island.png"
+  },
+  {
+    "material_id": "sea-green-blue",
+    "swatch_id": "s53",
+    "swatch_name": "Sea Green Blue",
+    "company": "Acelab Samples",
+    "image_ref": "Sea Green Blue.png"
+  },
+  {
+    "material_id": "seafoam",
+    "swatch_id": "s54",
+    "swatch_name": "Seafoam",
+    "company": "Acelab Samples",
+    "image_ref": "Seafoam.png"
+  },
+  {
+    "material_id": "shoreline",
+    "swatch_id": "s55",
+    "swatch_name": "Shoreline",
+    "company": "Acelab Samples",
+    "image_ref": "Shoreline.png"
+  },
+  {
+    "material_id": "skull",
+    "swatch_id": "s56",
+    "swatch_name": "Skull",
+    "company": "Acelab Samples",
+    "image_ref": "Skull.png"
+  },
+  {
+    "material_id": "sparklepuss",
+    "swatch_id": "s57",
+    "swatch_name": "Sparklepuss",
+    "company": "Acelab Samples",
+    "image_ref": "Sparklepuss.png"
+  },
+  {
+    "material_id": "tumeric",
+    "swatch_id": "s58",
+    "swatch_name": "Tumeric",
+    "company": "Acelab Samples",
+    "image_ref": "Tumeric.png"
+  },
+  {
+    "material_id": "wine",
+    "swatch_id": "s59",
+    "swatch_name": "Wine",
+    "company": "Acelab Samples",
+    "image_ref": "Wine.png"
+  },
+  {
+    "material_id": "black-white-bw",
+    "swatch_id": "s60",
+    "swatch_name": "Black & White",
+    "company": "Acelab Samples",
+    "image_ref": "Black & White.png"
+  }
 ]
