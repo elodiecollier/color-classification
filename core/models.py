@@ -121,6 +121,21 @@ class NameAnalysisResult(BaseModel):
     )
 
 
+class VisionAnalysisResult(BaseModel):
+    """Gemini-vision's ADVISORY read of the swatch image (§3 amendment).
+
+    Same shape as the name signal: bucket votes + confidence. Used only to
+    break name-vs-image conflicts in reconcile — never as the color
+    measurement (that stays with the deterministic clustering pipeline)."""
+
+    model_config = _FROZEN
+
+    buckets: list[ColorBucket] = Field(
+        default_factory=list, description="Bucket(s) the model sees; empty if unsure"
+    )
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 class ImageAnalysisResult(BaseModel):
     """The deterministic image pipeline's output (CLAUDE.md §6 step 2)."""
 

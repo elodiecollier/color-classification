@@ -9,6 +9,7 @@ this as an injected client and stays import-clean + testable with a fake.
 
 from __future__ import annotations
 
+import base64
 import os
 
 from openai import OpenAI
@@ -34,6 +35,30 @@ class OpenRouterClient:
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        return response.choices[0].message.content or ""
+
+    def complete_json_vision(
+        self, *, system: str, user: str, image_bytes: bytes, mime_type: str
+    ) -> str:
+        """`ports.llm.VisionLLMClient`: one multimodal completion, JSON-object
+        mode. The image rides along as an OpenAI-style base64 data URL (the
+        format OpenRouter forwards to Gemini)."""
+        data_url = f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
             ],
             response_format={"type": "json_object"},
             temperature=0,

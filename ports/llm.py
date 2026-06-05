@@ -21,3 +21,19 @@ class LLMClient(Protocol):
         defensively (§9). Implementations may raise on transport/auth errors.
         """
         ...
+
+
+class VisionLLMClient(Protocol):
+    """Structural interface for a JSON-returning MULTIMODAL completion.
+
+    Used ONLY by `core/vision_analysis.py` — the advisory third opinion that
+    breaks name-vs-image conflicts (§3 amendment). The deterministic clustering
+    pipeline remains the authoritative color MEASUREMENT; this never replaces it.
+    """
+
+    def complete_json_vision(
+        self, *, system: str, user: str, image_bytes: bytes, mime_type: str
+    ) -> str:
+        """One completion with an attached image; returns raw response text
+        (validated defensively by the caller, like complete_json)."""
+        ...

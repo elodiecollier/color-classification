@@ -50,9 +50,17 @@ hooks come later.
   (e.g. "Sage" → green). Reuses the existing Gemini client.
 - **Deterministic LAB/HSL math handles PERCEPTUAL color** — extracting the
   dominant color(s) from a swatch *image* via clustering. **Do NOT ask an LLM to
-  eyeball dominant colors** — multi-tone / gradient / checkerboard swatches need
-  real clustering (a black/white checkerboard must classify as black + white,
-  NOT gray).
+  eyeball dominant colors as the MEASUREMENT** — multi-tone / gradient /
+  checkerboard swatches need real clustering (a black/white checkerboard must
+  classify as black + white, NOT gray).
+- **AMENDMENT (jessi, 2026-06-05 — Elodie to confirm):** Gemini-vision is now a
+  **third, ADVISORY opinion** (`core/vision_analysis.py`) consulted **only on
+  name-vs-image conflicts** as a tiebreak: vision agreeing with the image
+  publishes it at `vision_tiebreak_confidence` (0.8); agreeing with the name or
+  with neither keeps the record in review with a richer `conflict_reason`. It
+  never produces centroids/coverage and never replaces the clustering — the
+  math remains the only measurement. Enabled via `run_batch --with-vision` and
+  automatic in the webapp upload analyze; cost-bounded to conflicts only.
 - **Search is discrete buckets** — classify into a fixed set of color groups;
   search maps the query term to a group and returns its members. No embeddings.
 
@@ -65,6 +73,7 @@ hooks come later.
 | **Extraction: name→Gemini when intuitive, else image→LAB clustering** | Right tool per job: LLM for language, deterministic CV for perceptual color. |
 | **Image pipeline is authoritative when a swatch image exists**; name is a cheap pre-check / corroboration | Names lie ("Fall River Glaze"); pixels don't. |
 | **Reconcile name vs image; conflicts → review queue** (never silently pick) | Two independent signals cross-checked = trustworthy output + a triage path for hard cases. |
+| **Vision third opinion on conflicts only** (advisory tiebreak, §3 amendment) | Cuts the review queue down to genuinely hard cases; image-side agreement = two independent readers of the pixels concur. Conflict-only keeps LLM cost ~zero on clean data. |
 | **Name LLM = Gemini flash via the OpenRouter gateway**, behind a port | Standalone repo (no native Gemini client to reuse) and the key we have is OpenRouter — an OpenAI-compatible gateway that still reaches Gemini. The `openai` SDK lives in `adapters/llm/openrouter.py`; `core/` stays SDK-free + testable with a fake. |
 | **Local-file sink now; Directus write-back later**, sink swappable behind an interface | Prove it standalone; integration = swap the adapter, no pipeline changes. |
 | **Store raw `lab_centroids` even now** | Durable asset: enables future "similar color" LAB-distance search and survives taxonomy re-tuning. |

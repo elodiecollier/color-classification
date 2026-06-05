@@ -108,6 +108,12 @@ class ConfidenceThresholds(BaseModel):
         default=0.5, ge=0.0, le=1.0,
         description="Any record with confidence below this is flagged needs_review",
     )
+    vision_tiebreak_confidence: float = Field(
+        default=0.8, ge=0.0, le=1.0,
+        description="Confidence when a name-vs-image conflict is resolved by the "
+                    "Gemini-vision third opinion siding with the image (§3 amendment); "
+                    "below agreement_confidence — a broken tie, not a clean agreement",
+    )
 
 
 class ClusteringThresholds(BaseModel):

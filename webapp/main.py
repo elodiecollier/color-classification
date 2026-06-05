@@ -41,6 +41,7 @@ from core.buckets import bucket_for_hsl, lab_to_hsl
 from core.image_pipeline import analyze_swatch
 from core.name_analysis import analyze_name
 from core.reconcile import reconcile
+from core.vision_analysis import analyze_image_vision
 from core.models import (
     ColorBucket,
     ColorRecord,
@@ -271,13 +272,16 @@ def _llm():
 
 class UploadAnalysis(BaseModel):
     """Proposed (NOT stored) classification of an uploaded swatch: the full
-    two-signal pipeline result + the evidence the UI needs for editing."""
+    pipeline result + the evidence the UI needs for editing."""
 
     record: ColorRecord  # provisional ids; reconcile's verdict
     bucket_coverage: dict[str, float]
     name_used: bool  # False when no name given or no API key
     name_buckets: list[ColorBucket] = []
     name_confidence: float = 0.0
+    vision_used: bool = False  # third opinion runs ONLY on name-vs-image conflicts
+    vision_buckets: list[ColorBucket] = []
+    vision_confidence: float = 0.0
 
 
 @app.post("/api/swatches/analyze", response_model=UploadAnalysis)
@@ -300,12 +304,27 @@ async def analyze_upload(file: UploadFile, name: str = Form("")) -> UploadAnalys
 
     provisional = MaterialRecord(material_id="(preview)", swatch_name=swatch_name or None)
     record = reconcile(provisional, name_result, image_result)
+
+    # §3 amendment: on a name-vs-image conflict, get the vision third opinion
+    # and re-reconcile with it (it may break the tie toward the image).
+    vision_result = None
+    if record.conflict_reason and client is not None:
+        vision_result = analyze_image_vision(
+            image_bytes, client, mime_type=file.content_type or "image/png"
+        )
+        record = reconcile(
+            provisional, name_result, image_result, vision_result=vision_result
+        )
+
     return UploadAnalysis(
         record=record,
         bucket_coverage=_bucket_coverage(record),
         name_used=name_result is not None,
         name_buckets=name_result.buckets if name_result else [],
         name_confidence=name_result.confidence if name_result else 0.0,
+        vision_used=vision_result is not None,
+        vision_buckets=vision_result.buckets if vision_result else [],
+        vision_confidence=vision_result.confidence if vision_result else 0.0,
     )
 
 

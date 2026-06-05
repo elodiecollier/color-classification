@@ -321,6 +321,10 @@ function renderProposal(file, swatchName, a) {
     : a.name_used
       ? `name signal: ${a.name_buckets.length ? a.name_buckets.join(", ") : "not an intuitive color"} (${pct(a.name_confidence)})`
       : "name signal: unavailable (no OPENROUTER_API_KEY)";
+  // the third opinion only runs when name and image conflicted
+  const visionLine = a.vision_used
+    ? `\nvision third opinion: ${a.vision_buckets.length ? a.vision_buckets.join(", ") : "unsure"} (${pct(a.vision_confidence)})`
+    : "";
 
   const box = document.createElement("div");
   box.className = `flash${rec.needs_review ? " warn" : ""}`;
@@ -331,7 +335,7 @@ function renderProposal(file, swatchName, a) {
       <div class="review-thumb" style="background-image:url('${imgUrl}');background-size:cover;background-position:center" title="${file.name}"></div>
       <div class="review-body">
         <b>Proposed for “${swatchName || file.name}”</b>
-        <div class="bucket-detail">${nameLine}
+        <div class="bucket-detail">${nameLine}${visionLine}
 pipeline verdict: ${rec.color_groups.join(", ") || "(none)"} · confidence ${pct(rec.confidence)} · source: ${rec.source}${rec.conflict_reason ? `\n⚠ ${rec.conflict_reason}` : ""}</div>
         <div class="suggested"></div>
         <button class="btn commit">Add to library</button>

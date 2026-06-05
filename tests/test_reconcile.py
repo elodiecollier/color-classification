@@ -18,6 +18,7 @@ from core.models import (
     ImageAnalysisResult,
     MaterialRecord,
     NameAnalysisResult,
+    VisionAnalysisResult,
 )
 from core.reconcile import reconcile
 
@@ -122,3 +123,59 @@ def test_empty_image_buckets_is_unusable_image():
     # an image result with no surviving buckets must not count as a signal
     rec = reconcile(RECORD, name([B.GREEN], 0.9), image([], centroids=[]))
     assert rec.source == "name"
+
+
+# --- vision third-opinion tiebreak (§3 amendment) ----------------------------
+
+
+def vision(buckets, confidence=0.85):
+    return VisionAnalysisResult(buckets=buckets, confidence=confidence)
+
+
+def test_vision_siding_with_image_breaks_the_conflict():
+    rec = reconcile(
+        RECORD, name([B.BLUE], 0.9), image([B.GREY]),
+        vision_result=vision([B.GREY]),
+    )
+    assert rec.needs_review is False
+    assert rec.conflict_reason is None
+    assert rec.color_groups == [B.GREY]
+    assert rec.confidence == CFG.vision_tiebreak_confidence
+    assert rec.lab_centroids == CENTROIDS  # evidence still rides along
+
+
+def test_vision_siding_with_name_stays_in_review_with_richer_reason():
+    rec = reconcile(
+        RECORD, name([B.BLUE], 0.9), image([B.GREY]),
+        vision_result=vision([B.BLUE]),
+    )
+    assert rec.needs_review is True
+    assert "sided with the NAME" in rec.conflict_reason
+
+
+def test_vision_matching_neither_stays_in_review():
+    rec = reconcile(
+        RECORD, name([B.BLUE], 0.9), image([B.GREY]),
+        vision_result=vision([B.RED]),
+    )
+    assert rec.needs_review is True
+    assert "matched neither" in rec.conflict_reason
+
+
+def test_empty_vision_changes_nothing():
+    with_v = reconcile(
+        RECORD, name([B.BLUE], 0.9), image([B.GREY]),
+        vision_result=vision([], confidence=0.0),
+    )
+    without = reconcile(RECORD, name([B.BLUE], 0.9), image([B.GREY]))
+    assert with_v == without
+
+
+def test_vision_is_ignored_when_signals_agree():
+    # vision is a CONFLICT tiebreak only — agreement doesn't consult it
+    rec = reconcile(
+        RECORD, name([B.BROWN], 0.9), image([B.BROWN]),
+        vision_result=vision([B.RED]),
+    )
+    assert rec.confidence == CFG.agreement_confidence
+    assert rec.needs_review is False

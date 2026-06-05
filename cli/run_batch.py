@@ -34,18 +34,19 @@ from core.image_pipeline import analyze_swatch
 from core.models import ColorRecord, MaterialRecord
 from core.name_analysis import analyze_name
 from core.reconcile import reconcile
+from core.vision_analysis import analyze_image_vision
 
 
 def main() -> None:
     args = _parse_args()
 
     llm_client = None
-    if args.with_name:
+    if args.with_name or args.with_vision:
         from dotenv import load_dotenv
         load_dotenv()  # picks up OPENROUTER_API_KEY from .env (never committed)
         key = os.environ.get("OPENROUTER_API_KEY")
         if not key:
-            print("ERROR: --with-name requires OPENROUTER_API_KEY to be set.", file=sys.stderr)
+            print("ERROR: --with-name/--with-vision require OPENROUTER_API_KEY.", file=sys.stderr)
             sys.exit(1)
         from adapters.llm.openrouter import OpenRouterClient
         llm_client = OpenRouterClient(api_key=key)
@@ -63,8 +64,12 @@ def main() -> None:
     if args.limit:
         records = records[: args.limit]
 
-    print(f"Processing {len(records)} record(s) "
-          f"({'name + image' if llm_client else 'image-only'}) …\n")
+    signals = "image"
+    if args.with_name:
+        signals = "name + image"
+    if args.with_vision:
+        signals += " + vision tiebreak"
+    print(f"Processing {len(records)} record(s) ({signals}) …\n")
 
     published = skipped = 0
     with FileColorSink(args.output) as sink:
@@ -93,13 +98,14 @@ def _classify_one(
     try:
         # --- name signal (cheap, optional) ---
         name_result = None
-        if llm_client and record.swatch_name:
+        if llm_client and args.with_name and record.swatch_name:
             name_result = analyze_name(
                 record.swatch_name, llm_client, company=record.company
             )
 
         # --- image signal (authoritative when present) ---
         image_result = None
+        image_bytes = None
         if record.image_ref:
             image_bytes = image_store.get_image(record.image_ref)
             if image_bytes is not None:
@@ -110,7 +116,19 @@ def _classify_one(
                     config=DEFAULT,
                 )
 
-        return reconcile(record, name_result, image_result)
+        result = reconcile(record, name_result, image_result)
+
+        # --- vision tiebreak (§3 amendment): ONLY on conflicts, to bound cost ---
+        if (
+            args.with_vision and llm_client
+            and result.conflict_reason and image_bytes is not None
+        ):
+            vision = analyze_image_vision(image_bytes, llm_client)
+            result = reconcile(
+                record, name_result, image_result, vision_result=vision
+            )
+
+        return result
 
     except Exception:
         print(f"  [SKIP] {record.material_id} — unexpected error:")
@@ -133,6 +151,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--output", default="output", help="Output directory for JSONL files")
     p.add_argument("--with-name", action="store_true",
                    help="Enable name pre-check via Gemini (needs OPENROUTER_API_KEY)")
+    p.add_argument("--with-vision", action="store_true",
+                   help="Enable the Gemini-vision THIRD OPINION on name-vs-image "
+                        "conflicts only (advisory tiebreak; needs OPENROUTER_API_KEY)")
     p.add_argument("--limit", type=int, default=None, metavar="N",
                    help="Process only the first N records (for quick iteration)")
     return p.parse_args()

@@ -31,6 +31,7 @@ from core.models import (
     MaterialRecord,
     NameAnalysisResult,
     Source,
+    VisionAnalysisResult,
 )
 
 
@@ -39,6 +40,8 @@ def reconcile(
     name_result: NameAnalysisResult | None,
     image_result: ImageAnalysisResult | None,
     config: Thresholds = DEFAULT,
+    *,
+    vision_result: VisionAnalysisResult | None = None,
 ) -> ColorRecord:
     """Merge the (optional) name and image signals into the final ColorRecord."""
     cfg = config.confidence
@@ -90,16 +93,42 @@ def reconcile(
                     confidence=cfg.agreement_confidence, image_result=image_result,
                     needs_review=cfg.agreement_confidence < cfg.needs_review_below,
                 )
+            conflict_reason = (
+                f"Name {record.swatch_name!r} suggested "
+                f"[{_names(name_result.buckets)}] but the image found "
+                f"[{_names(image_result.buckets)}] — no overlap."
+            )
+
+            # Third opinion (§3 amendment): an ADVISORY vision read may break
+            # the tie. Image-side agreement publishes (pixels corroborated by
+            # an independent reader); anything else stays in review.
+            if vision_result is not None and vision_result.buckets:
+                vision = set(vision_result.buckets)
+                if vision & set(image_result.buckets):
+                    return _build(
+                        record, source="reconciled",
+                        color_groups=list(image_result.buckets),
+                        confidence=cfg.vision_tiebreak_confidence,
+                        image_result=image_result,
+                        needs_review=cfg.vision_tiebreak_confidence < cfg.needs_review_below,
+                    )
+                if vision & set(name_result.buckets):
+                    conflict_reason += (
+                        f" Vision tiebreak sided with the NAME"
+                        f" [{_names(vision_result.buckets)}] — pixels may mislead."
+                    )
+                else:
+                    conflict_reason += (
+                        f" Vision tiebreak matched neither"
+                        f" [{_names(vision_result.buckets)}]."
+                    )
+
             return _build(
                 record, source="reconciled",
                 color_groups=list(image_result.buckets),  # image kept, but NOT trusted silently
                 confidence=cfg.conflict_confidence, image_result=image_result,
                 needs_review=True,
-                conflict_reason=(
-                    f"Name {record.swatch_name!r} suggested "
-                    f"[{_names(name_result.buckets)}] but the image found "
-                    f"[{_names(image_result.buckets)}] — no overlap."
-                ),
+                conflict_reason=conflict_reason,
             )
 
 
