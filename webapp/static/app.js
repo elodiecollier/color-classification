@@ -4,15 +4,13 @@
 
 const $ = (sel) => document.querySelector(sel);
 
-// Rough display color per bucket, for tag chips.
-const BUCKET_CSS = {
-  red: "#d04545", orange: "#e07b39", yellow: "#e3c33e", green: "#5a9a5e",
-  blue: "#4a72c4", purple: "#8c5fb5", grey: "#9aa0a8", white: "#f5f5f2",
-  black: "#26282b", brown: "#8a5a3b",
-};
+// Display color per bucket, for tag chips. The actual values live in ONE
+// place — the :root palette in style.css — referenced here by variable.
+const bucketCss = (b) => `var(--bucket-${b}, var(--bucket-unknown))`;
 
 // canonical_hsl {h,s,l} -> CSS. Null record -> a striped "unclassified" fill.
-const UNCLASSIFIED = "repeating-linear-gradient(45deg,#eceef1,#eceef1 6px,#f8f9fa 6px,#f8f9fa 12px)";
+const UNCLASSIFIED =
+  "repeating-linear-gradient(45deg,var(--stripe-a),var(--stripe-a) 6px,var(--stripe-b) 6px,var(--stripe-b) 12px)";
 const cssOf = (hsl) =>
   hsl ? `hsl(${Math.round(hsl.h)} ${Math.round(hsl.s * 100)}% ${Math.round(hsl.l * 100)}%)` : UNCLASSIFIED;
 
@@ -23,7 +21,7 @@ const cssOf = (hsl) =>
 const swatchCss = (item) =>
   item.image_url
     ? `background-image:url('${encodeURI(item.image_url)}');background-size:cover;` +
-      `background-position:center;background-color:#eef0f3`
+      `background-position:center;background-color:var(--soft)`
     : `background:${cssOf(item.canonical_hsl)}`;
 
 // The per-swatch key used in admin API paths (a material can have many swatches).
@@ -50,7 +48,7 @@ $("#tab-admin").onclick = () => showTab("admin");
 const groupChip = (bucket, onRemove) => {
   const chip = document.createElement("span");
   chip.className = "chip";
-  chip.innerHTML = `<span class="dot" style="background:${BUCKET_CSS[bucket] || "#ccc"}"></span>${bucket}`;
+  chip.innerHTML = `<span class="dot" style="background:${bucketCss(bucket)}"></span>${bucket}`;
   if (onRemove) {
     const x = document.createElement("span");
     x.className = "x";
@@ -223,7 +221,7 @@ function renderReview(review, allBuckets) {
       const chip = document.createElement("span");
       chip.className = `chip selectable${suggested ? " on" : ""}`;
       chip.title = cov > 0 ? "pixel coverage" : "no pixel evidence";
-      chip.innerHTML = `<span class="dot" style="background:${BUCKET_CSS[b] || "#ccc"}"></span>${b}` +
+      chip.innerHTML = `<span class="dot" style="background:${bucketCss(b)}"></span>${b}` +
         (cov > 0 ? ` <span class="pct">${Math.round(cov * 100)}%</span>` : "");
       chip.onclick = () => {
         chip.classList.toggle("on");
@@ -350,7 +348,7 @@ pipeline verdict: ${rec.color_groups.join(", ") || "(none)"} · confidence ${pct
     const chip = document.createElement("span");
     chip.className = `chip selectable${selected.has(b) ? " on" : ""}`;
     chip.title = cov > 0 ? "pixel coverage" : "no pixel evidence";
-    chip.innerHTML = `<span class="dot" style="background:${BUCKET_CSS[b] || "#ccc"}"></span>${b}` +
+    chip.innerHTML = `<span class="dot" style="background:${bucketCss(b)}"></span>${b}` +
       (cov > 0 ? ` <span class="pct">${pct(cov)}</span>` : "");
     chip.onclick = () => {
       chip.classList.toggle("on");

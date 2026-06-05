@@ -45,12 +45,14 @@
         proposed tags, then add it to the library. <b>In-memory:</b> cleared on restart.</p>
       <form id="classify-form">
         <!-- click = file picker, or drag a swatch image onto the zone -->
+        <div>
+          <input id="swatch-name" type="text" placeholder="Swatch name…" autocomplete="off" />
+          <button type="submit">Analyze</button>
+        </div>
         <div id="drop-zone" tabindex="0">
-          <span id="drop-zone-label">📥 Drop a swatch image here — or click to browse</span>
+          <span id="drop-zone-label">Drop a swatch image here — or click to browse</span>
           <input id="classify-file" type="file" accept="image/*" hidden />
         </div>
-        <input id="swatch-name" type="text" placeholder="Swatch name…" autocomplete="off" />
-        <button type="submit">Analyze</button>
       </form>
       <div id="classify-result"></div>
     </section>
