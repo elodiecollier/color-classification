@@ -69,26 +69,45 @@ async def no_cache_frontend(request, call_next):
 # --- the §10 search contract ---------------------------------------------------
 
 
+SEARCH_PAGE_SIZE = 24
+SEARCH_MAX_LIMIT = 200
+
+
 @app.get("/search", response_model=SearchResponse)
-def search(color: str = "") -> SearchResponse:
+def search(
+    color: str = "", offset: int = 0, limit: int = SEARCH_PAGE_SIZE
+) -> SearchResponse:
     """Term -> bucket -> published records whose color_groups include it.
 
-    Exact bucket name or synonym only — an unmapped term returns bucket=None
-    and zero results (per contract; no fuzzy text fallback)."""
+    Paginated: returns results[offset : offset+limit] plus `total` (the full
+    match count) so the client can infinite-scroll. Built as if the library
+    were huge — the full match set is computed then sliced server-side.
+
+    Empty query = browse: every swatch in the library (bucket=None) so the
+    page is never blank. A non-empty term must be an exact bucket name or
+    synonym — an unmapped term returns bucket=None and zero results (per
+    contract; no fuzzy text fallback)."""
     term = color.strip().lower()
     bucket: ColorBucket | None = None
-    if term in db.BUCKETS:
-        bucket = ColorBucket(term)
-    else:
-        bucket = db.SYNONYMS.get(term)
+    matches: list[SearchResultItem] = []
 
-    results: list[SearchResultItem] = []
-    if bucket is not None:
-        for material in db.MATERIALS:
-            record = db.published_for(material)
-            if record is not None and bucket in record.color_groups:
-                results.append(db.to_search_item(material, record))
-    return SearchResponse(query=color, bucket=bucket, count=len(results), results=results)
+    if not term:
+        matches = [db.to_search_item(m, db.published_for(m)) for m in db.MATERIALS]
+    else:
+        bucket = ColorBucket(term) if term in db.BUCKETS else db.SYNONYMS.get(term)
+        if bucket is not None:
+            for material in db.MATERIALS:
+                record = db.published_for(material)
+                if record is not None and bucket in record.color_groups:
+                    matches.append(db.to_search_item(material, record))
+
+    limit = max(1, min(limit, SEARCH_MAX_LIMIT))
+    offset = max(0, offset)
+    page = matches[offset : offset + limit]
+    return SearchResponse(
+        query=color, bucket=bucket, count=len(page), total=len(matches),
+        offset=offset, limit=limit, results=page,
+    )
 
 
 # --- admin: products + color groups ---------------------------------------------

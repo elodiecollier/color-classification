@@ -40,6 +40,7 @@ const showTab = (name) => {
   $("#tab-search").classList.toggle("active", name === "search");
   $("#tab-admin").classList.toggle("active", name === "admin");
   if (name === "admin") refreshAdmin();
+  if (name === "search") runSearch($("#search-input").value);
 };
 $("#tab-search").onclick = () => showTab("search");
 $("#tab-admin").onclick = () => showTab("admin");
@@ -78,21 +79,98 @@ const resultCard = (item) => {
   return card;
 };
 
-// ---------- search tab (the §10 contract) ----------
-$("#search-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const q = $("#search-input").value;
-  const data = await api(`/search?color=${encodeURIComponent(q)}`); // SearchResponse
-  $("#search-meta").textContent = data.bucket
-    ? `“${data.query}” → ${data.bucket} · ${data.count} result(s)`
-    : q.trim() ? `“${data.query}” doesn't map to a color bucket` : "";
+// ---------- search tab (the §10 contract, paginated) ----------
+// Empty query = browse the whole library; a term filters by color bucket.
+// Results are fetched a page at a time and appended on scroll, so this scales
+// to an arbitrarily large library (the server slices; the client never holds
+// more than what's been scrolled to).
+const PAGE_SIZE = 24;
+
+// Live pagination state. `seq` tags the active query so a slow in-flight page
+// from a superseded search (fast typing) is discarded instead of appended.
+let browse = { q: "", offset: 0, total: 0, loading: false, done: true, seq: 0 };
+let _searchSeq = 0;
+
+function setSearchMeta() {
+  const trimmed = browse.q.trim();
+  const meta = $("#search-meta");
+  if (!trimmed) {
+    meta.textContent = `Showing ${browse.offset} of ${browse.total} swatches — type a color to filter`;
+  } else if (browse.bucket) {
+    meta.textContent = `“${browse.q}” → ${browse.bucket} · ${browse.total} result(s)`;
+  } else {
+    meta.textContent = `“${browse.q}” doesn't map to a color bucket`;
+  }
+}
+
+// Start a fresh search (resets pagination + clears the grid).
+async function runSearch(q) {
+  const seq = ++_searchSeq;
+  browse = { q, offset: 0, total: 0, bucket: null, loading: false, done: false, seq };
+  $("#search-results").replaceChildren();
+  await loadNextPage();
+}
+
+// Fetch + append the next page for the current query. No-op while a page is in
+// flight or once the full set is exhausted.
+async function loadNextPage() {
+  if (browse.loading || browse.done) return;
+  browse.loading = true;
+  const seq = browse.seq;
+  let data;
+  try {
+    data = await api(
+      `/search?color=${encodeURIComponent(browse.q)}&offset=${browse.offset}&limit=${PAGE_SIZE}`,
+    );
+  } catch (err) {
+    browse.loading = false;
+    return;
+  }
+  if (seq !== _searchSeq) return; // a newer search superseded this one
+
+  browse.bucket = data.bucket;
+  browse.total = data.total ?? data.count;
+  browse.offset += data.results.length;
+  if (!data.results.length || browse.offset >= browse.total) browse.done = true;
 
   const out = $("#search-results");
-  out.replaceChildren(...data.results.map(resultCard));
-  if (!data.count && q.trim()) {
-    out.innerHTML = `<p class="empty">No results${data.bucket ? ` for ${data.bucket} — is anything classified ${data.bucket} yet? (Admin tab)` : ""}.</p>`;
+  if (!browse.offset && browse.done) {
+    // first page came back empty
+    out.innerHTML = browse.q.trim()
+      ? `<p class="empty">No results${data.bucket ? ` for ${data.bucket} — is anything classified ${data.bucket} yet? (Admin tab)` : ""}.</p>`
+      : `<p class="empty">No swatches in the library yet.</p>`;
+  } else {
+    data.results.forEach((item) => out.appendChild(resultCard(item)));
   }
+  setSearchMeta();
+  browse.loading = false;
+
+  // If the first page didn't fill the viewport there's no scrollbar to drive
+  // further loads — keep pulling until the page scrolls or the set is done.
+  if (!browse.done && document.documentElement.scrollHeight <= window.innerHeight) {
+    loadNextPage();
+  }
+}
+
+$("#search-form").onsubmit = (e) => {
+  e.preventDefault();
+  runSearch($("#search-input").value);
 };
+
+// Filter live as the user types (debounced so we don't fire on every keystroke).
+let _searchTimer;
+$("#search-input").addEventListener("input", () => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => runSearch($("#search-input").value), 200);
+});
+
+// Infinite scroll: load the next page as the user nears the bottom.
+window.addEventListener("scroll", () => {
+  if ($("#view-search").hidden) return;
+  const nearBottom =
+    window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400;
+  if (nearBottom) loadNextPage();
+});
 
 // ---------- admin tab ----------
 async function refreshAdmin() {
@@ -387,5 +465,6 @@ pipeline verdict: ${rec.color_groups.join(", ") || "(none)"} · confidence ${pct
   out.replaceChildren(box);
 }
 
-// initial load
+// initial load — the search tab is shown first, so populate the browse list
+runSearch("");
 refreshAdmin();

@@ -209,5 +209,11 @@ class SearchResponse(BaseModel):
     bucket: ColorBucket | None = Field(
         default=None, description="Bucket the term mapped to; None if unmapped"
     )
-    count: int
+    count: int = Field(description="Number of results in THIS page (len(results))")
+    total: int | None = Field(
+        default=None,
+        description="Total matches across all pages; None when not paginated (== count)",
+    )
+    offset: int = Field(default=0, description="Index of the first result in this page")
+    limit: int | None = Field(default=None, description="Max page size requested")
     results: list[SearchResultItem] = Field(default_factory=list)
