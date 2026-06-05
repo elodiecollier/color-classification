@@ -22,9 +22,17 @@ auto-loaded by Claude Code so every session shares the same context.
 ## Quick start
 
 ```bash
-uv run pytest                                # the test suite
+uv run pytest                                # the test suite (93)
+uv run python -m cli.run_batch               # classify fixtures -> output/*.jsonl (image-only)
+uv run python -m cli.run_batch --with-name   # + Gemini name signal (OPENROUTER_API_KEY in .env)
+uv run python -m cli.eval                    # accuracy harness over labelled swatches
 uv run uvicorn webapp.main:app --reload      # demo webapp -> http://localhost:8000
 ```
+
+The webapp loads `fixtures/records.json` + `output/*.jsonl` **at startup** —
+restart it after a batch run. To add data: append rows to `fixtures/records.json`
+(same `material_id` + different `swatch_id` = multiple swatches per material),
+drop images in `fixtures/images/`, re-run the batch.
 
 ## Data contracts
 
@@ -74,14 +82,22 @@ GET /search?color=<term> ─▶ SearchResponse{ results: [SearchResultItem…] }
 | Type | Where | What it is |
 |---|---|---|
 | **`ClusteringStrategy`** | `ports/clustering.py` | Protocol for the swappable pixel-clusterer: `cluster(lab_pixels: (N,3) ndarray) -> list[ClusterResult]`, coverage-sorted, deterministic. Implemented by `adapters/clustering/kmeans_sweep.py` (k-sweep + silhouette); HDBSCAN is the planned A/B. Acid test: a black/white checkerboard must yield **two** clusters, never one grey. |
-| **`RecordSource` / `ImageStore` / `ColorSink`** | `ports/` | The remaining integration seams (read records / fetch image bytes / write `ColorRecord`s). Interfaces only so far — mock adapters now, Directus/R2 later, `core/` unchanged. |
-| **`Thresholds` / `BucketingThresholds`** | `config/thresholds.py` | THE single tunable-config constant (`DEFAULT`): hue bands, achromatic cutoffs, the brown rule, etc. Every boundary number in the system lives here — nothing is hard-coded elsewhere (§5). |
-| **`ReviewItem`** | `webapp/main.py` | Demo-only composition for the admin queue: `{material: MaterialRecord, record: ColorRecord}`. Not a new shape — just the two contract types side by side. |
+| **`RecordSource` / `ImageStore` / `ColorSink`** | `ports/` | The integration seams (read records / fetch image bytes / write `ColorRecord`s). Implemented by `adapters/mock/*` (fixture source, local images, JSONL sink + `jsonl_color_source` reader); Directus/R2 swap in later, `core/` unchanged. |
+| **`LLMClient`** | `ports/llm.py` | The name-analysis LLM seam: `complete_json(system, user) -> str`. Implemented by `adapters/llm/openrouter.py` (OpenRouter → Gemini flash, `openai` SDK); `core/name_analysis` takes it injected, so tests use a fake. |
+| **`Thresholds`** (`.bucketing` / `.clustering` / `.confidence`) | `config/thresholds.py` | THE single tunable-config constant (`DEFAULT`): hue bands, achromatic cutoffs, the brown rule, ΔE merge/coverage filters, and the reconcile confidence table. Every boundary number in the system lives here — nothing is hard-coded elsewhere (§5). |
+| **`ReviewItem` / `AdminProduct`** | `webapp/main.py` | Demo-only compositions for the admin UI: the contract types side by side plus a derived `bucket_coverage` map (per-bucket pixel coverage computed from `lab_centroids`) — evidence display, not a new contract. |
 
 ## Status
 
-In active build — bucketing, clustering (k-means sweep + preprocess), the full
-schema, and the demo webapp (search + admin + review queue + live classify,
-aligned to the §10 contract) are done; 38 tests pass. Backend next steps:
-`image_pipeline` glue, `name_analysis` (Gemini), reconcile, mock data layer.
-See `CLAUDE.md` §13 for the live build order and §18 for current status.
+**End-to-end complete, running on real data** — the full two-signal pipeline
+(Gemini name analysis + LAB clustering + reconcile) has classified a 22-swatch
+real manufacturer set, with agreements at 95%, non-intuitive names correctly
+falling through to pixels, and name-vs-image conflicts routed to the review
+queue. The demo webapp serves that output: color search, an admin view with
+per-bucket pixel-coverage evidence, full-taxonomy review resolution with swatch
+thumbnails, and drag-and-drop live classification. 93 tests pass.
+
+**Current focus: threshold tuning** against the measured real-data misses
+(light wood → orange, ivory → yellow, olive ↔ brown — see `CLAUDE.md` §16),
+including the neutral/beige-bucket decision. Then Phase 4: Directus/R2 adapters
+behind the existing ports. See `CLAUDE.md` §13/§18 for the live plan.

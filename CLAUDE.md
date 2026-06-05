@@ -196,13 +196,18 @@ lets the UI render a color chip even before real swatch images are wired.
 chip from `canonical_hsl`, swatch name, company, image, and a `needs_review`
 flag. Keep it minimal; it's a demo, not a product surface.
 
-> **Current state: ALIGNED.** The demo `webapp/` serves exactly this contract:
-> `GET /search?color=<term>` → `SearchResponse` (types imported from
-> `core/models.py`). Its demo-only admin endpoints (`/api/products`, `/api/review`,
-> `/api/classify`) are not part of the contract but are composed strictly from the
-> contract types — `SearchResultItem`, `MaterialRecord`, and §8 `ColorRecord`
-> (review queue = `ColorRecord`s with `needs_review=True`; classify returns a
-> `ColorRecord`). No webapp-local shapes remain.
+> **Current state: ALIGNED + ON REAL DATA.** The demo `webapp/` serves exactly
+> this contract: `GET /search?color=<term>` → `SearchResponse` (types imported
+> from `core/models.py`), and reads the REAL pipeline data — materials from
+> `fixtures/records.json`, colors from `run_batch`'s `output/*.jsonl` (loads at
+> startup; restart after a batch). Swatch images are served from
+> `fixtures/images/` at `/swatches/…` via `image_url`. Its demo-only admin
+> endpoints (`/api/products`, `/api/review`, `/api/classify`) are composed from
+> the contract types plus a derived `bucket_coverage` map (per-bucket pixel
+> coverage from `lab_centroids`) so the UI can show the evidence behind each
+> tag; review cards offer the FULL 10-bucket taxonomy for resolution (a human
+> may pick a color the algorithm didn't suggest) with swatch thumbnails, and
+> classify supports drag-and-drop. Admin mutations are in-memory only.
 
 ## 11. Repo layout (intended)
 
@@ -234,10 +239,10 @@ color-classification/
   cli/
     run_batch.py         # batch: records → image/name → reconcile → JSONL sink
     eval.py              # accuracy harness over labelled swatches (§13)
-  webapp/                # demo API + static UI (partner's lane), FastAPI-served
-    main.py              # /api/search, /api/classify (live pipeline), review queue
-    db.py                # in-memory mock product table for the demo
-    static/              # index.html + app.js + style.css
+  webapp/                # demo API + static UI (jessi's lane), FastAPI-served
+    main.py              # /search (§10 contract), admin endpoints, live classify
+    db.py                # loads fixtures/records.json + output/*.jsonl at startup
+    static/              # index.html + app.js + style.css (vanilla, no build)
   tests/
 ```
 Keep `core/` free of external dependencies; all I/O behind `ports/`. Swappable
@@ -281,8 +286,11 @@ Owners: **[E]** = Elodie · **[J]** = jessi. `✅` = done.
 ### Phase 2 — Search + demo UI
 11. **[J]** demo `webapp/` (search, admin, review, live classify), on the §10/§8 contract. — ✅
 12. **[E]** `core/search.py` + `adapters/mock/jsonl_color_source.py` (search `run_batch`'s output). — ✅
-13. **[J]** wire the webapp to `core.search` + `load_classified` so the UI searches
-    REAL output (not the `db.py` seed); dedup synonyms → `core.search.DEFAULT_SYNONYMS`. — *next*
+13. **[J]** wire the webapp to REAL output. — ✅ data-wise (`webapp/db.py` loads
+    `fixtures/records.json` + `output/*.jsonl`; the `db.py` seed is gone).
+    *Remaining cleanup:* it still has its OWN loader + synonyms copy — swap them
+    for `core.search` / `adapters/mock/jsonl_color_source` and
+    `core.search.DEFAULT_SYNONYMS` so the term→bucket logic isn't duplicated.
 
 ### Phase 3 — Tests & eval
 14. **[E]** `cli/eval.py` accuracy harness over labelled swatches. — ✅ (92% synthetic; beige→orange the one gap, §16)
@@ -309,8 +317,8 @@ and the mock pipeline is built end-to-end. Current state:
 | Search (`core/search` + jsonl loader) | Elodie | ✅ |
 | Accuracy eval (`cli/eval`) | Elodie | ✅ |
 | Demo `webapp/` (on §10/§8 contract) | jessi | ✅ |
-| **Webapp ↔ real `run_batch` output** | jessi | **next** |
-| **Real `company_colors` data + tuning** | jessi | in progress |
+| Webapp ↔ real `run_batch` output | jessi | ✅ (loader/synonym dedup to `core.search` pending) |
+| **Real-data threshold tuning** (22-swatch set imported; misses identified, §16) | both | **next** |
 | Directus/R2 adapters + inline hook (Phase 4) | — | deferred |
 
 The clean seams still hold: front-end ↔ back-end meet only at `GET /search` →
@@ -359,12 +367,22 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
   **name-only** (the LLM) — *unless* we add an **R2 `ImageStore` adapter** to
   fetch images by key. This decides whether the next build is that adapter, so
   confirm it before the real-data run.
-- A few real swatches (name + image) to tune the §5 thresholds against.
-  (`OPENROUTER_API_KEY` for the name LLM is available; stored as an env var /
-  gitignored `.env`, never committed.)
-- Whether a **neutral/beige** bucket is needed — `cli/eval` already shows
-  beige → orange (a measured miss); gauge how common neutrals are on real
-  materials before adding a bucket or retuning the brown rule.
+- ~~A few real swatches (name + image) to tune against~~ — **have them**: a
+  22-swatch real set (Chasing Paper, Past Forward, Graham & Brown, RAYDOOR) in
+  `fixtures/`, first `run_batch --with-name` run done (`OPENROUTER_API_KEY` via
+  gitignored `.env`, loaded by python-dotenv). Measured misses to tune:
+  - **light wood → orange** (Ash l=.61, White Maple l=.74, Teak l=.62 — all
+    above `brown_max_lightness=0.45`, so the brown rule never fires);
+  - **ivory → yellow** (s=.17/l=.89 — a double near-miss of the grey s≤.12 and
+    white l≥.92 cutoffs, then hue 63° lands in the yellow band);
+  - **dark olive → brown** (Avocado h=48 caught by `brown_hue_max=50` — raising
+    it for wood makes this worse: the thresholds fight);
+  - **fine pattern desaturation** (Navy/Ivory: navy lines blur into s=.08 →
+    grey; a resolution problem, not a threshold one).
+- Whether a **neutral/beige** bucket is needed — `cli/eval` shows beige → orange
+  on synthetic, and the real-data wood/ivory misses above are the same gap:
+  single straight-line cutoffs can't carve out the "muted warm neutral" zone.
+  Decide: new bucket vs. 2-D (sat×lightness) boundary rules.
 
 ## 17. Out of scope / do not use
 
@@ -374,26 +392,31 @@ All under `~/developer/acelab/`. You do **not** develop in these here.
 
 ## 18. Status
 
-**The mock pipeline is END-TO-END COMPLETE** and **93 tests pass**: classify
-(`run_batch`) → `output/color_records.jsonl` → `core.search`, plus a demo
-`webapp/`, the `name_analysis` LLM step (OpenRouter → Gemini), and a `cli/eval`
-accuracy harness (92% on the synthetic labelled set; the one failure, beige →
-orange, is the §5 neutral-bucket gap).
+**The pipeline is END-TO-END COMPLETE and has met real data.** **93 tests
+pass.** `run_batch --with-name` ran the full two-signal flow (OpenRouter→Gemini
+name + LAB clustering image + reconcile) over a 22-swatch real set: agreements
+at 95%, "Fall River Glaze" correctly fell through to image-only (85%),
+"Forest Canopy" classified from name alone (70%), and 9 name-vs-image conflicts
+landed in the review queue with readable reasons. The demo `webapp/` serves
+that real output (see §10): search + admin with per-bucket pixel-coverage
+evidence, full-taxonomy review resolution with swatch thumbnails, drag-and-drop
+live classify. `cli/eval` scores 92% on the synthetic labelled set.
 
 **Remaining:**
-- **Demo:** wire the webapp to `core.search` + `load_classified` so it searches
-  REAL `run_batch` output instead of its `db.py` seed (jessi).
-- **Data + tuning:** real `company_colors` sample (§16, jessi gathering), then
-  tune thresholds — point `cli/eval --labels` at a labelled real set to measure
-  (beige→orange is the first known target).
+- **Threshold tuning (the §13 step-15 work, now unblocked):** the real-data
+  misses are catalogued in §16 (light wood→orange, ivory→yellow, olive↔brown).
+  Loop: edit `config/thresholds.py` → `run_batch --with-name` + `cli/eval` →
+  restart webapp. Includes the neutral-bucket decision (§16, team).
+- **Cleanup:** webapp still duplicates the loader/synonym logic — dedup to
+  `core.search` + `jsonl_color_source` (§13 step 13). Admin mutations
+  (resolutions, live classifies) are in-memory only — persist if the demo needs
+  them to survive a restart.
 - **Production (Phase 4):** Directus/R2 adapters behind the ports + the inline
-  post-persist hook.
+  post-persist hook; blocked on the §16 record-format/ownership questions.
 
-Run it: `uv run pytest` · `uv run python -m cli.run_batch` ·
-`uv run python -m cli.eval` · `uv run uvicorn webapp.main:app --reload`.
-
-**Open external item:** a real `company_colors` sample for `fixtures/` (§16) —
-needed before `run_batch` runs end-to-end on real data.
+Run it: `uv run pytest` · `uv run python -m cli.run_batch --with-name` ·
+`uv run python -m cli.eval` · `uv run uvicorn webapp.main:app --reload`
+(restart the webapp after each batch — it loads output at startup).
 
 A discarded early spike (Gemini-vision color + embeddings) lives at
 `acelab-hatchet-workers/experiments/color_classification/`; its name-analysis code
