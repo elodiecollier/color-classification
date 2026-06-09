@@ -76,7 +76,7 @@ SEARCH_MAX_LIMIT = 200
 
 @app.get("/search", response_model=SearchResponse)
 def search(
-    color: str = "", offset: int = 0, limit: int = SEARCH_PAGE_SIZE
+    color: str = "", groups: str = "", offset: int = 0, limit: int = SEARCH_PAGE_SIZE
 ) -> SearchResponse:
     """Term -> ranked published records matching by color and/or name/company.
 
@@ -89,7 +89,11 @@ def search(
     via exact name or synonym, is in color_groups) and/or by STRING (the term
     appears in the swatch name or company). Results are ranked best-color-match
     then string-match — see `core.search.rank_search`. Review-queue swatches are
-    included but match by name/company only (badged ⚠ review in the UI)."""
+    included but match by name/company only (badged ⚠ review in the UI).
+
+    `groups` is an optional comma-separated list of bucket names; when present,
+    results are filtered to swatches in ANY of those buckets (a shopping-style
+    color facet, applied on top of the query — browse or search alike)."""
     term = color.strip()
     bucket: ColorBucket | None = None
     matches: list[SearchResultItem] = []
@@ -102,6 +106,12 @@ def search(
         pairs = [(m, r) for m in db.MATERIALS if (r := db.find_record(m)) is not None]
         bucket, ranked = rank_search(term, pairs)
         matches = [db.to_search_item(material, record) for material, record in ranked]
+
+    # Color facet: keep swatches bucketed in ANY selected color (OR). Unknown
+    # bucket names are ignored so a stale/garbage param can't empty the results.
+    selected = {g for g in groups.split(",") if g in db.BUCKETS}
+    if selected:
+        matches = [it for it in matches if any(b in selected for b in it.color_groups)]
 
     limit = max(1, min(limit, SEARCH_MAX_LIMIT))
     offset = max(0, offset)

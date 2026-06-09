@@ -160,6 +160,15 @@ input[type="file"] {
   margin: 28px 0;
 }
 
+/* search-tab title — prominent, but a different treatment than the header brand */
+.hint {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 18px;
+}
+
 #search-form {
   display: flex;
   gap: 8px;
@@ -172,6 +181,126 @@ input[type="file"] {
   font-size: 16px;
   border: 1px solid var(--border-input);
   border-radius: 10px;
+}
+
+/* color filter (the shopping-style facet next to the search bar) */
+#search-form {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter {
+  position: relative;
+  margin-left: auto; /* push the filter to the right of the search row */
+}
+
+/* Filter = medium emphasis: outlined ink, a step below the solid search button. */
+#filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+}
+
+#filter-toggle:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+/* active filter: subtle filled state, same ink family — no off-palette accent */
+#filter-toggle.active {
+  background: var(--soft);
+}
+
+.filter-icon {
+  display: inline-block;
+}
+
+/* the explicit display rules above/below beat the `hidden` attribute's
+   display:none, so re-assert it: icon and count are mutually exclusive. */
+.filter-icon[hidden],
+.badge[hidden] {
+  display: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--text-on-ink);
+}
+
+#review-count {
+  margin-left: 6px; /* badge no longer carries its own margin */
+}
+
+/* results counter, centered below the swatch grid */
+.results-count {
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 18px 0 6px;
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0; /* anchored to the right since the button sits at the right edge */
+  z-index: 20;
+  width: 184px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.filter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.filter-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+/* color options as a vertical list of full-width rows */
+.filter-options .chip {
+  margin: 0;
+  justify-content: flex-start;
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--bucket-blue);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }
 
 /* result cards */

@@ -91,16 +91,15 @@ const PAGE_SIZE = 24;
 let browse = { q: "", offset: 0, total: 0, loading: false, done: true, seq: 0 };
 let _searchSeq = 0;
 
+// Active color facet: the set of bucket names to filter results by (OR). Sent
+// to /search as ?groups=…; empty = no filter. Re-running search re-applies it.
+const activeFilters = new Set();
+
 function setSearchMeta() {
-  const trimmed = browse.q.trim();
-  const meta = $("#search-meta");
-  if (!trimmed) {
-    meta.textContent = `Showing ${browse.offset} of ${browse.total} swatches — type a color or name to filter`;
-  } else if (browse.bucket) {
-    meta.textContent = `“${browse.q}” → ${browse.bucket} · ${browse.total} result(s)`;
-  } else {
-    meta.textContent = `“${browse.q}” · ${browse.total} result(s)`;
-  }
+  // centered results counter below the grid — singular/plural, hidden when empty
+  const count = $("#results-count");
+  count.hidden = browse.total === 0;
+  count.textContent = `${browse.total} ${browse.total === 1 ? "swatch" : "swatches"}`;
 }
 
 // Start a fresh search (resets pagination + clears the grid).
@@ -119,8 +118,10 @@ async function loadNextPage() {
   const seq = browse.seq;
   let data;
   try {
+    const groups = [...activeFilters].join(",");
     data = await api(
-      `/search?color=${encodeURIComponent(browse.q)}&offset=${browse.offset}&limit=${PAGE_SIZE}`,
+      `/search?color=${encodeURIComponent(browse.q)}&offset=${browse.offset}&limit=${PAGE_SIZE}` +
+        (groups ? `&groups=${encodeURIComponent(groups)}` : ""),
     );
   } catch (err) {
     browse.loading = false;
@@ -136,9 +137,12 @@ async function loadNextPage() {
   const out = $("#search-results");
   if (!browse.offset && browse.done) {
     // first page came back empty
+    const filterNote = activeFilters.size ? ` in ${[...activeFilters].join(", ")}` : "";
     out.innerHTML = browse.q.trim()
-      ? `<p class="empty">No swatches match “${browse.q}” by color or name.</p>`
-      : `<p class="empty">No swatches in the library yet.</p>`;
+      ? `<p class="empty">No swatches match “${browse.q}”${filterNote}.</p>`
+      : activeFilters.size
+        ? `<p class="empty">No swatches are bucketed in ${[...activeFilters].join(", ")}.</p>`
+        : `<p class="empty">No swatches in the library yet.</p>`;
   } else {
     data.results.forEach((item) => out.appendChild(resultCard(item)));
   }
@@ -171,6 +175,67 @@ window.addEventListener("scroll", () => {
     window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400;
   if (nearBottom) loadNextPage();
 });
+
+// ---------- color filter (the shopping-style color facet) ----------
+// A multi-select bucket filter next to the search bar. Selecting buckets adds
+// them to `activeFilters` and re-runs the current search; the server filters by
+// ANY selected bucket. Built once from /api/buckets (the colors we account for).
+function syncFilterChrome() {
+  const n = activeFilters.size;
+  const count = $("#filter-count");
+  // no filters -> show the funnel icon; filters active -> show the count badge
+  count.hidden = n === 0;
+  count.textContent = n;
+  $("#filter-icon").hidden = n > 0;
+  $("#filter-toggle").classList.toggle("active", n > 0);
+  $("#filter-clear").hidden = !n;
+}
+
+function applyFilters() {
+  syncFilterChrome();
+  runSearch($("#search-input").value); // re-query with the new ?groups=…
+}
+
+async function initColorFilter() {
+  let buckets;
+  try {
+    buckets = await api("/api/buckets");
+  } catch {
+    return; // filter is additive — if buckets can't load, search still works
+  }
+  const opts = $("#filter-options");
+  for (const b of buckets) {
+    const chip = document.createElement("span");
+    chip.className = "chip selectable";
+    chip.innerHTML = `<span class="dot" style="background:${bucketCss(b)}"></span>${b}`;
+    chip.onclick = () => {
+      const on = chip.classList.toggle("on");
+      on ? activeFilters.add(b) : activeFilters.delete(b);
+      applyFilters();
+    };
+    opts.appendChild(chip);
+  }
+
+  const panel = $("#filter-panel");
+  const toggle = $("#filter-toggle");
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  toggle.onclick = (e) => {
+    e.stopPropagation();
+    setOpen(panel.hidden);
+  };
+  // click inside the panel shouldn't close it; click anywhere else does.
+  panel.onclick = (e) => e.stopPropagation();
+  document.addEventListener("click", () => setOpen(false));
+
+  $("#filter-clear").onclick = () => {
+    activeFilters.clear();
+    opts.querySelectorAll(".chip.on").forEach((c) => c.classList.remove("on"));
+    applyFilters();
+  };
+}
 
 // ---------- admin tab ----------
 async function refreshAdmin() {
@@ -466,5 +531,6 @@ pipeline verdict: ${rec.color_groups.join(", ") || "(none)"} · confidence ${pct
 }
 
 // initial load — the search tab is shown first, so populate the browse list
+initColorFilter();
 runSearch("");
 refreshAdmin();
