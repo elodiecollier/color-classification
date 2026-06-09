@@ -21,33 +21,13 @@ import json
 from pathlib import Path
 
 from core.models import ColorBucket, ColorRecord, MaterialRecord, SearchResultItem
+from core.search import DEFAULT_SYNONYMS as SYNONYMS
 
 FIXTURES_PATH = Path("fixtures/records.json")
 RECORDS_PATH = Path("output/color_records.jsonl")
 REVIEW_PATH = Path("output/review_queue.jsonl")
 
 BUCKETS: list[str] = [b.value for b in ColorBucket]
-
-# Query-term -> bucket synonyms for the search demo (§10). The real version
-# reuses Gemini name-analysis; a static map is plenty for the demo.
-SYNONYMS: dict[str, ColorBucket] = {
-    "sage": ColorBucket.GREEN, "lime": ColorBucket.GREEN, "forest": ColorBucket.GREEN,
-    "olive": ColorBucket.GREEN, "mint": ColorBucket.GREEN, "avocado": ColorBucket.GREEN,
-    "navy": ColorBucket.BLUE, "sky": ColorBucket.BLUE, "teal": ColorBucket.BLUE,
-    "azure": ColorBucket.BLUE, "sapphire": ColorBucket.BLUE,
-    "crimson": ColorBucket.RED, "scarlet": ColorBucket.RED, "pink": ColorBucket.RED,
-    "rose": ColorBucket.RED, "burgundy": ColorBucket.RED,
-    "rust": ColorBucket.ORANGE, "amber": ColorBucket.ORANGE, "spice": ColorBucket.ORANGE,
-    "gold": ColorBucket.YELLOW, "lemon": ColorBucket.YELLOW, "cream": ColorBucket.YELLOW,
-    "violet": ColorBucket.PURPLE, "lavender": ColorBucket.PURPLE, "plum": ColorBucket.PURPLE,
-    "charcoal": ColorBucket.GREY, "slate": ColorBucket.GREY, "silver": ColorBucket.GREY,
-    "gray": ColorBucket.GREY, "pebble": ColorBucket.GREY, "ash": ColorBucket.GREY,
-    "ivory": ColorBucket.WHITE, "snow": ColorBucket.WHITE,
-    "ebony": ColorBucket.BLACK, "onyx": ColorBucket.BLACK, "midnight": ColorBucket.BLACK,
-    "tan": ColorBucket.BROWN, "beige": ColorBucket.BROWN, "walnut": ColorBucket.BROWN,
-    "chocolate": ColorBucket.BROWN, "terracotta": ColorBucket.BROWN,
-    "teak": ColorBucket.BROWN, "timber": ColorBucket.BROWN,
-}
 
 
 def key_of(material_id: str, swatch_id: str | None) -> str:

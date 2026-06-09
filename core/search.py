@@ -25,21 +25,33 @@ from core.models import (
 # Query-term -> bucket synonyms (the §10 demo: "green" returns sage/lime/forest).
 # Canonical home for these; the webapp can import this instead of its own copy.
 DEFAULT_SYNONYMS: dict[str, ColorBucket] = {
+    # green
     "sage": ColorBucket.GREEN, "lime": ColorBucket.GREEN, "forest": ColorBucket.GREEN,
-    "olive": ColorBucket.GREEN, "mint": ColorBucket.GREEN,
+    "olive": ColorBucket.GREEN, "mint": ColorBucket.GREEN, "avocado": ColorBucket.GREEN,
+    # blue
     "navy": ColorBucket.BLUE, "sky": ColorBucket.BLUE, "teal": ColorBucket.BLUE,
-    "azure": ColorBucket.BLUE,
+    "azure": ColorBucket.BLUE, "sapphire": ColorBucket.BLUE,
+    # red
     "crimson": ColorBucket.RED, "scarlet": ColorBucket.RED, "pink": ColorBucket.RED,
     "rose": ColorBucket.RED, "burgundy": ColorBucket.RED,
+    # orange
     "rust": ColorBucket.ORANGE, "amber": ColorBucket.ORANGE, "tangerine": ColorBucket.ORANGE,
+    "spice": ColorBucket.ORANGE,
+    # yellow
     "gold": ColorBucket.YELLOW, "lemon": ColorBucket.YELLOW, "cream": ColorBucket.YELLOW,
+    # purple
     "violet": ColorBucket.PURPLE, "lavender": ColorBucket.PURPLE, "plum": ColorBucket.PURPLE,
+    # grey
     "charcoal": ColorBucket.GREY, "slate": ColorBucket.GREY, "silver": ColorBucket.GREY,
-    "gray": ColorBucket.GREY,
+    "gray": ColorBucket.GREY, "pebble": ColorBucket.GREY, "ash": ColorBucket.GREY,
+    # white
     "ivory": ColorBucket.WHITE, "snow": ColorBucket.WHITE,
-    "ebony": ColorBucket.BLACK, "onyx": ColorBucket.BLACK,
+    # black
+    "ebony": ColorBucket.BLACK, "onyx": ColorBucket.BLACK, "midnight": ColorBucket.BLACK,
+    # brown
     "tan": ColorBucket.BROWN, "beige": ColorBucket.BROWN, "walnut": ColorBucket.BROWN,
     "chocolate": ColorBucket.BROWN, "terracotta": ColorBucket.BROWN,
+    "teak": ColorBucket.BROWN, "timber": ColorBucket.BROWN,
 }
 
 
