@@ -10,11 +10,11 @@ from core.search import DEFAULT_SYNONYMS, resolve_bucket, search
 B = ColorBucket
 
 
-def _pair(mid, buckets, *, name=None, needs_review=False):
-    material = MaterialRecord(material_id=mid, swatch_name=name)
+def _pair(mid, buckets, *, name=None, company=None, confidence=0.9, needs_review=False):
+    material = MaterialRecord(material_id=mid, swatch_name=name, company=company)
     record = ColorRecord(
         material_id=mid, source="image", color_groups=buckets,
-        canonical_hsl=HSL(h=120, s=0.4, l=0.5), confidence=0.9, needs_review=needs_review,
+        canonical_hsl=HSL(h=120, s=0.4, l=0.5), confidence=confidence, needs_review=needs_review,
     )
     return material, record
 
@@ -50,15 +50,85 @@ def test_search_via_synonym():
     assert resp.bucket == B.GREEN and resp.count == 2
 
 
-def test_search_unmapped_term_returns_empty():
+def test_search_unmapped_term_with_no_text_match_returns_empty():
     resp = search("plaid", [_pair("m1", [B.GREEN])])
     assert resp.bucket is None and resp.count == 0 and resp.results == []
 
 
-def test_search_skips_needs_review_records():
+# --- string matching on name / company (the §10 expansion) ------------------
+def test_search_matches_swatch_name_even_when_bucket_differs():
+    # "Navy/Ivory" classified white, not blue — "navy" must still surface it.
+    pairs = [_pair("m1", [B.WHITE], name="Navy/Ivory")]
+    resp = search("navy", pairs)
+    assert resp.bucket == B.BLUE  # the term still resolves
+    assert [r.material_id for r in resp.results] == ["m1"]  # found via the name
+
+
+def test_search_matches_company_name():
+    pairs = [_pair("m1", [B.GREEN], name="Sage", company="Daltile")]
+    assert search("daltile", pairs).count == 1
+
+
+def test_search_unmapped_term_still_matches_text():
+    # "carrara" maps to no bucket but is a swatch name -> string match surfaces it.
+    pairs = [_pair("m1", [B.WHITE], name="Carrara")]
+    resp = search("carrara", pairs)
+    assert resp.bucket is None and [r.material_id for r in resp.results] == ["m1"]
+
+
+# --- ranking: best color match, then string match ---------------------------
+def test_color_match_outranks_name_only_match():
+    # 100%-confidence orange bucket beats a swatch merely named "orange".
+    pairs = [
+        _pair("named", [B.RED], name="Orange"),          # string-only
+        _pair("bucketed", [B.ORANGE], name="Sunset", confidence=1.0),  # color-only
+    ]
+    resp = search("orange", pairs)
+    assert [r.material_id for r in resp.results] == ["bucketed", "named"]
+
+
+def test_both_color_and_string_ranks_on_top():
+    pairs = [
+        _pair("color_only", [B.ORANGE], name="Sunset", confidence=1.0),
+        _pair("string_only", [B.RED], name="Orange Peel"),
+        _pair("both", [B.ORANGE], name="Orange Glow", confidence=0.7),
+    ]
+    resp = search("orange", pairs)
+    # combo first (even at lower confidence), then the pure color match, then string-only.
+    assert [r.material_id for r in resp.results] == ["both", "color_only", "string_only"]
+
+
+def test_color_matches_ordered_by_confidence():
+    pairs = [
+        _pair("low", [B.GREEN], name="A", confidence=0.6),
+        _pair("high", [B.GREEN], name="B", confidence=0.95),
+    ]
+    resp = search("green", pairs)
+    assert [r.material_id for r in resp.results] == ["high", "low"]
+
+
+def test_search_skips_needs_review_records_on_color_match():
+    # A pending-review record must NOT surface as a color (bucket) match.
     pairs = [_pair("m1", [B.GREEN]), _pair("m2", [B.GREEN], needs_review=True)]
     resp = search("green", pairs)
     assert [r.material_id for r in resp.results] == ["m1"]
+
+
+def test_needs_review_record_still_matches_by_name():
+    # ...but it IS findable by the name/company text the user typed (badged in UI).
+    pairs = [_pair("m1", [B.WHITE], name="Navy/Ivory", needs_review=True)]
+    resp = search("navy", pairs)
+    assert [r.material_id for r in resp.results] == ["m1"]
+    assert resp.results[0].needs_review is True  # UI can badge it ⚠ review
+
+
+def test_published_color_match_outranks_review_name_match():
+    pairs = [
+        _pair("review", [B.WHITE], name="Navy/Ivory", needs_review=True),  # string-only
+        _pair("published", [B.BLUE], name="Ocean"),                         # color match
+    ]
+    resp = search("navy", pairs)
+    assert [r.material_id for r in resp.results] == ["published", "review"]
 
 
 def test_search_multi_bucket_record_matches_each():

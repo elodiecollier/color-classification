@@ -21,7 +21,6 @@ import json
 from pathlib import Path
 
 from core.models import ColorBucket, ColorRecord, MaterialRecord, SearchResultItem
-from core.search import DEFAULT_SYNONYMS as SYNONYMS
 
 FIXTURES_PATH = Path("fixtures/records.json")
 RECORDS_PATH = Path("output/color_records.jsonl")
@@ -108,7 +107,9 @@ def published_for(material: MaterialRecord) -> ColorRecord | None:
 
 def find_record(material: MaterialRecord) -> ColorRecord | None:
     """Published record if any, else the queued (pending-review) one — what the
-    admin view shows. Search must use published_for/COLOR_RECORDS only."""
+    admin view shows, and the candidate set for search. `rank_search` lets a
+    pending-review record match by name/company text only, never by color, so an
+    unconfirmed color classification never surfaces as a trustworthy result."""
     return published_for(material) or get_queued(key_of(material.material_id, material.swatch_id))
 
 

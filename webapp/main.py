@@ -41,6 +41,7 @@ from core.buckets import bucket_for_hsl, lab_to_hsl
 from core.image_pipeline import analyze_swatch
 from core.name_analysis import analyze_name
 from core.reconcile import reconcile
+from core.search import rank_search
 from core.vision_analysis import analyze_image_vision
 from core.models import (
     ColorBucket,
@@ -77,29 +78,30 @@ SEARCH_MAX_LIMIT = 200
 def search(
     color: str = "", offset: int = 0, limit: int = SEARCH_PAGE_SIZE
 ) -> SearchResponse:
-    """Term -> bucket -> published records whose color_groups include it.
+    """Term -> ranked published records matching by color and/or name/company.
 
     Paginated: returns results[offset : offset+limit] plus `total` (the full
     match count) so the client can infinite-scroll. Built as if the library
     were huge — the full match set is computed then sliced server-side.
 
     Empty query = browse: every swatch in the library (bucket=None) so the
-    page is never blank. A non-empty term must be an exact bucket name or
-    synonym — an unmapped term returns bucket=None and zero results (per
-    contract; no fuzzy text fallback)."""
-    term = color.strip().lower()
+    page is never blank. A non-empty term matches a swatch by COLOR (its bucket,
+    via exact name or synonym, is in color_groups) and/or by STRING (the term
+    appears in the swatch name or company). Results are ranked best-color-match
+    then string-match — see `core.search.rank_search`. Review-queue swatches are
+    included but match by name/company only (badged ⚠ review in the UI)."""
+    term = color.strip()
     bucket: ColorBucket | None = None
     matches: list[SearchResultItem] = []
 
     if not term:
         matches = [db.to_search_item(m, db.published_for(m)) for m in db.MATERIALS]
     else:
-        bucket = ColorBucket(term) if term in db.BUCKETS else db.SYNONYMS.get(term)
-        if bucket is not None:
-            for material in db.MATERIALS:
-                record = db.published_for(material)
-                if record is not None and bucket in record.color_groups:
-                    matches.append(db.to_search_item(material, record))
+        # Candidates = published OR pending-review records; rank_search only lets
+        # the review ones match by name/company, never by color.
+        pairs = [(m, r) for m in db.MATERIALS if (r := db.find_record(m)) is not None]
+        bucket, ranked = rank_search(term, pairs)
+        matches = [db.to_search_item(material, record) for material, record in ranked]
 
     limit = max(1, min(limit, SEARCH_MAX_LIMIT))
     offset = max(0, offset)

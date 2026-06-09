@@ -76,7 +76,7 @@ GET /search?color=<term> ─▶ SearchResponse{ results: [SearchResultItem…] }
 | Type | What it is | Notes |
 |---|---|---|
 | **`SearchResultItem`** | One swatch in a search response — a UI-facing view of a `ColorRecord` *joined* with display fields from its `MaterialRecord` (`swatch_name`, `company`, `image_url`). | `canonical_hsl` lets the UI render a chip before real swatch images are wired. |
-| **`SearchResponse`** | The body of `GET /search?color=<term>`: `query`, the `bucket` the term mapped to (`null` if unmapped), `count`, `results`. | **This is the front/back seam** — the UI builds against this and nothing else. Served by `webapp/main.py`; an unmapped term returns `bucket: null` + zero results (no fuzzy fallback). |
+| **`SearchResponse`** | The body of `GET /search?color=<term>`: `query`, the `bucket` the term mapped to (`null` if unmapped), `count`, `results`. | **This is the front/back seam** — the UI builds against this and nothing else. Served by `webapp/main.py`; results are ranked by color match then swatch-name/company text match (`core.search.rank_search`), so an unmapped term can still return text matches with `bucket: null`. Review-queue swatches match by name/company only. |
 
 ### Interfaces & config (not in `core/models.py`)
 

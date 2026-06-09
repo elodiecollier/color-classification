@@ -95,11 +95,11 @@ function setSearchMeta() {
   const trimmed = browse.q.trim();
   const meta = $("#search-meta");
   if (!trimmed) {
-    meta.textContent = `Showing ${browse.offset} of ${browse.total} swatches — type a color to filter`;
+    meta.textContent = `Showing ${browse.offset} of ${browse.total} swatches — type a color or name to filter`;
   } else if (browse.bucket) {
     meta.textContent = `“${browse.q}” → ${browse.bucket} · ${browse.total} result(s)`;
   } else {
-    meta.textContent = `“${browse.q}” doesn't map to a color bucket`;
+    meta.textContent = `“${browse.q}” · ${browse.total} result(s)`;
   }
 }
 
@@ -137,7 +137,7 @@ async function loadNextPage() {
   if (!browse.offset && browse.done) {
     // first page came back empty
     out.innerHTML = browse.q.trim()
-      ? `<p class="empty">No results${data.bucket ? ` for ${data.bucket} — is anything classified ${data.bucket} yet? (Admin tab)` : ""}.</p>`
+      ? `<p class="empty">No swatches match “${browse.q}” by color or name.</p>`
       : `<p class="empty">No swatches in the library yet.</p>`;
   } else {
     data.results.forEach((item) => out.appendChild(resultCard(item)));

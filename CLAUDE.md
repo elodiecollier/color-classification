@@ -62,13 +62,14 @@ hooks come later.
   math remains the only measurement. Enabled via `run_batch --with-vision` and
   automatic in the webapp upload analyze; cost-bounded to conflicts only.
 - **Search is discrete buckets** — classify into a fixed set of color groups;
-  search maps the query term to a group and returns its members. No embeddings.
+  search maps the query term to a group and returns its members (plus swatches
+  whose name/company contains the term, ranked below color matches). No embeddings.
 
 ## 4. Key decisions (with rationale)
 
 | Decision | Why |
 |---|---|
-| **Search = discrete color buckets** (the 10 below), term→group exact match | Simple, self-contained, explainable; directly serves "green → sage/lime"; no embedding infra or external Search API. Search is only a demo. |
+| **Search = discrete color buckets** (the 10 below), term→group match, ranked above a name/company text match | Simple, self-contained, explainable; directly serves "green → sage/lime", while a text fallback still finds swatches by name; no embedding infra or external Search API. Search is only a demo. |
 | **No embeddings / no external Search API** this phase | Search is buckets, not vector similarity — keeps the repo self-contained. |
 | **Extraction: name→Gemini when intuitive, else image→LAB clustering** | Right tool per job: LLM for language, deterministic CV for perceptual color. |
 | **Image pipeline is authoritative when a swatch image exists**; name is a cheap pre-check / corroboration | Names lie ("Fall River Glaze"); pixels don't. |
@@ -176,9 +177,23 @@ replace the file writer later with no pipeline changes.
 Search is a thin lookup over the buckets; a small web UI makes the result
 showable. Both exist to *demonstrate* the extraction.
 
-**Search logic:** map the user's color term → bucket (reuse the name→group
-logic), then return all records whose `color_groups` include it, reading from the
-output file.
+**Search logic** (`core/search.rank_search`, shared by the endpoint and the pure
+`search()`): a term matches a swatch two ways — by **color** (the term maps to a
+bucket via exact name or synonym, and that bucket is in the swatch's
+`color_groups`) and/or by **string** (the term is a substring of the swatch
+*name* or *company*). String matching is what lets a swatch whose name names a
+color surface even when its pixels classified elsewhere (e.g. *"Navy/Ivory"*
+classified white/grey still answers a "navy" search). Results are **ranked**:
+swatches matching both color and string rank first, then color matches ordered by
+confidence, then string-only matches ordered by name relevance (exact > prefix >
+substring > company); ties break on name. An unmapped term (no bucket) is no
+longer empty — it can still return string matches (`bucket: null`).
+
+**Review-queue swatches** (`needs_review`) are searchable too, but match by
+**name/company only — never by color**: an unconfirmed color classification must
+not surface as a trustworthy color result, but the swatch stays findable by the
+text the user typed. Such results carry `needs_review: true` so the UI badges
+them ⚠ review.
 
 **Search API (the front/back contract).** A minimal FastAPI endpoint —
 `GET /search?color=<term>` → `SearchResponse` (defined in `core/models.py`). The
