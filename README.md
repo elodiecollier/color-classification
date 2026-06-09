@@ -25,6 +25,7 @@ auto-loaded by Claude Code so every session shares the same context.
 uv run pytest                                # the test suite (93)
 uv run python -m cli.run_batch               # classify fixtures -> output/*.jsonl (image-only)
 uv run python -m cli.run_batch --with-name   # + Gemini name signal (OPENROUTER_API_KEY in .env)
+uv run python -m cli.run_batch --with-name --with-vision  # + Gemini-vision tiebreak on name-vs-image conflicts only
 uv run python -m cli.eval                    # accuracy harness over labelled swatches
 uv run uvicorn webapp.main:app --reload      # demo webapp -> http://localhost:8000
 ```
